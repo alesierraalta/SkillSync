@@ -1,6 +1,6 @@
   Editing Skill: Test
 
-> Test Description 
-> project 
+> > Test Description 
+  > project 
 
-(esc: back, ctrl+s: save)
+  esc: back | ctrl+s: save (desc/scope)  
