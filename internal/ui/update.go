@@ -3,13 +3,15 @@ package ui
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"skillsync/tui/internal/discovery"
 	"skillsync/tui/internal/parser"
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/types"
 
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -30,6 +32,23 @@ func (m Model) loadSkills() tea.Cmd {
 				skills = append(skills, *s)
 			}
 		}
+
+		// Inject virtual AGENTS.md skill if exists
+		agentsPath := filepath.Join(m.rootPath, "AGENTS.md")
+		if _, err := os.Stat(agentsPath); err == nil {
+			content, err := os.ReadFile(agentsPath)
+			if err == nil {
+				virtualAgent := types.Skill{
+					ID:      "virtual:agents",
+					Name:    "★ AGENTS.md",
+					Path:    "AGENTS.md",
+					RawBody: string(content),
+				}
+				// Prepend to the slice
+				skills = append([]types.Skill{virtualAgent}, skills...)
+			}
+		}
+
 		return skillsLoadedMsg(skills)
 	}
 }
@@ -110,7 +129,17 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "enter":
+	case "enter", "v":
+		if i, ok := m.list.SelectedItem().(item); ok {
+			m.selected = &i.skill
+			m.PrevScreen = m.Screen
+			m.Screen = ScreenContentView
+			m.viewport.Width = m.Width
+			m.viewport.Height = m.Height - 6
+			m.updatePreview()
+			return m, nil
+		}
+	case "e":
 		if i, ok := m.list.SelectedItem().(item); ok {
 			m.selected = &i.skill
 			m.PrevScreen = m.Screen
@@ -122,16 +151,6 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.PrevScreen = m.Screen
 		m.Screen = ScreenSyncing
 		return m, m.startSync()
-	case "v":
-		if i, ok := m.list.SelectedItem().(item); ok {
-			m.selected = &i.skill
-			m.PrevScreen = m.Screen
-			m.Screen = ScreenContentView
-			m.viewport.Width = m.Width
-			m.viewport.Height = m.Height - 6
-			m.updatePreview()
-			return m, nil
-		}
 	case "pgup", "pgdown":
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
@@ -151,17 +170,45 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	isReadOnly := m.selected != nil && m.selected.ID == "virtual:agents"
+
 	switch msg.String() {
 	case "esc":
 		m.Screen = m.PrevScreen
 		return m, nil
 	case "ctrl+s":
+		if isReadOnly {
+			return m, nil
+		}
+		// Explicitly force values into selected before saving, 
+		// just in case they aren't syncing.
+		m.selected.Metadata.Description = m.inputs[0].Value()
+		m.selected.Metadata.Scope = m.inputs[1].Value()
 		return m, m.saveSkill()
+	case "tab":
+		if m.inputs[0].Focused() {
+			m.inputs[0].Blur()
+			m.inputs[1].Focus()
+		} else {
+			m.inputs[1].Blur()
+			m.inputs[0].Focus()
+		}
+		return m, nil
+	case "enter":
+		// Suppress Enter to prevent newlines in textarea
+		return m, nil
+	}
+
+	if isReadOnly {
+		return m, nil
 	}
 
 	var cmd tea.Cmd
 	for i := range m.inputs {
-		m.inputs[i], cmd = m.inputs[i].Update(msg)
+		if m.inputs[i].Focused() {
+			m.inputs[i], cmd = m.inputs[i].Update(msg)
+			break
+		}
 	}
 	return m, cmd
 }
@@ -202,18 +249,23 @@ func (m Model) handleComponentUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) setupInputs() {
-	m.inputs = make([]textinput.Model, 2)
+	m.inputs = make([]textarea.Model, 2)
+	isReadOnly := m.selected != nil && m.selected.ID == "virtual:agents"
 
-	d := textinput.New()
+	d := textarea.New()
 	d.Placeholder = "Description"
+	d.SetWidth(m.Width - 4)
 	if m.selected != nil {
 		d.SetValue(m.selected.Metadata.Description)
 	}
-	d.Focus()
+	if !isReadOnly {
+		d.Focus()
+	}
 	m.inputs[0] = d
 
-	s := textinput.New()
+	s := textarea.New()
 	s.Placeholder = "Scope"
+	s.SetWidth(m.Width - 4)
 	if m.selected != nil {
 		s.SetValue(m.selected.Metadata.Scope)
 	}

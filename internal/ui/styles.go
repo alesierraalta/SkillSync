@@ -30,4 +30,8 @@ var (
 
 	viewportStyle = lipgloss.NewStyle().
 			Padding(0, 2)
+
+	footerStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Padding(0, 2)
 )

@@ -2,9 +2,7 @@
 
 ---
 name: skill-sync
-description: >
-  Syncs skill metadata to AGENTS.md Auto-invoke sections.
-  Trigger: When updating skill metadata (metadata.scope/metadata.auto_invoke), regenerating Auto-invoke tables, or running ./.agent/skills/skill-sync/assets/sync.sh (including --dry-run/--scope).
+description: "Syncs skill metadata to AGENTS.md Auto-invoke sections. Trigger: When updating skill metadata (metadata.scope/metadata.auto_invoke), regenerating Auto-invoke tables, or running ./.agent/skills/skill-sync/assets/sync.sh (including --dry-run/--scope). "
 metadata:
   author: a.sierra
   version: '1.0'
@@ -14,7 +12,9 @@ metadata:
     - 'Regenerate AGENTS.md Auto-invoke tables (sync.sh)'
     - 'Troubleshoot why a skill is missing from AGENTS.md auto-invoke'
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash
-
+scope: ""
+auto_invoke: false
+local_only: false
 ---
 
 ## Purpose

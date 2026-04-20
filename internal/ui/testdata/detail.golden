@@ -1,6 +1,16 @@
   Editing Skill: Test
 
-> > Test Description 
-  > project 
+> ┃   1 Test Description                                                      
+┃                                                                           
+┃                                                                           
+┃                                                                           
+┃                                                                           
+┃                                                                           
+  ┃   1 project                                                               
+┃                                                                           
+┃                                                                           
+┃                                                                           
+┃                                                                           
+┃                                                                           
 
-  esc: back | ctrl+s: save (desc/scope)  
+  esc: back | tab: switch field | ctrl+s: save (desc/scope)  

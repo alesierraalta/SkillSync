@@ -18,5 +18,4 @@
                                                                                 
                                                                                 
                                                                                 
-
-(esc: back, j/k: scroll)
+  esc: back | j/k: scroll  

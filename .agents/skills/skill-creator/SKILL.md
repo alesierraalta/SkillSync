@@ -2,16 +2,16 @@
 
 ---
 name: skill-creator
-description: >
-  Creates new AI agent skills following the Agent Skills spec.
-  Trigger: When user asks to create a new skill, add agent instructions, or document patterns for AI.
+description: "Creates new AI agent skills following the Agent Skills spec. Trigger: When user asks to create a new skill, add agent instructions, or document patterns for AI. "
 metadata:
   author: "{your-name}"
   version: "1.0"
   scope: [root]
   auto_invoke: "Creating new skills"
 allowed-tools: Read, Edit, Write, Glob, Grep, Bash, WebFetch, WebSearch, Task
-
+scope: ""
+auto_invoke: false
+local_only: false
 ---
 
 ## When to Create a Skill

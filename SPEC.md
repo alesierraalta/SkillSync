@@ -18,6 +18,17 @@ System MUST scan current directory and subfolders for `SKILL.md` files.
   - WHEN TUI starts.
   - THEN Show empty state message.
 
+### Requirement: Virtual Injection (AGENTS.md)
+The system MUST inject `AGENTS.md` from the root as a virtual skill.
+- **Scenario: AGENTS.md exists**
+  - GIVEN `AGENTS.md` in root.
+  - WHEN TUI starts.
+  - THEN A virtual skill with ID `virtual:agents` and name `★ AGENTS.md` MUST appear at the top of the list.
+- **Scenario: AGENTS.md rendering**
+  - GIVEN virtual agent skill selected.
+  - WHEN Previewing content.
+  - THEN Markdown MUST be rendered using `glamour` without YAML frontmatter overhead.
+
 ### Requirement: YAML Frontmatter Parsing
 System MUST read/write YAML between `---` delimiters in `SKILL.md`.
 - **Scenario: Read metadata**
@@ -74,11 +85,27 @@ UI MUST allow marking skill as `local_only: true`.
 
 ### Requirement: Skill Content Viewing
 System MUST allow viewing skill content as an inline preview (default) OR full-screen view.
-- **Scenario: Maximize Preview**
+- **Scenario: Open Preview**
   - GIVEN user on `ScreenList`.
-  - WHEN user presses 'v'.
+  - WHEN user presses 'v' OR 'enter'.
   - THEN system MUST transition to `ScreenContentView` (100% width, no list).
   - AND 'esc' SHALL return to `ScreenList` (split view).
+
+### Requirement: Detail Screen Navigation
+The system MUST provide a separate screen for metadata editing.
+- **Scenario: Edit Skill**
+  - GIVEN user on `ScreenList`.
+  - WHEN user presses 'e'.
+  - THEN system MUST transition to `ScreenDetail`.
+  - AND 'esc' SHALL return to `ScreenList`.
+
+### Requirement: Read-Only Skills
+Certain skills (like virtual agents) MUST NOT be editable.
+- **Scenario: Virtual Agent Detail**
+  - GIVEN `virtual:agents` skill selected.
+  - WHEN entering `ScreenDetail`.
+  - THEN Inputs MUST be unfocused/blocked.
+  - AND `ctrl+s` (Save) MUST be disabled.
 
 ### Requirement: ScreenList Split View
 `ScreenList` MUST display two horizontal panels: List (40% width) and Preview (60% width).
@@ -107,6 +134,25 @@ TUI MUST re-render Markdown content when window size changes.
   - WHEN `WindowSizeMsg` received
   - THEN `glamour` renderer re-initialized with new width
   - AND viewport content updated with new wrapped text
+
+---
+
+## Domain: Dynamic Footer (Key Hints)
+
+### Requirement: Centralized Footer
+System MUST replace hardcoded key hints with a dynamic footer component.
+- **Scenario: Render Footer**
+  - GIVEN model `m`.
+  - WHEN `renderFooter(m)` called.
+  - THEN returns formatted string with active key bindings.
+- **Scenario: Dynamic Hints**
+  - GIVEN state `m.State`.
+  - THEN `renderFooter` updates hints based on current state (e.g., list vs. edit vs. preview).
+
+### Requirement: Implementation
+- **Component**: `renderFooter(m Model) string` in `internal/ui/view.go`.
+- **Styling**: `FooterStyle` in `internal/ui/styles.go` using Lipgloss.
+- **Testing**: Golden files in `internal/ui/view_test.go` for each view state.
 
 ---
 
@@ -140,8 +186,12 @@ TUI MUST provide key/button to trigger `sync.sh`.
   - Validation: System MUST perform atomic write (write temp -> rename).
 
 ### Acceptance Criteria
-- [ ] List all local skills.
-- [ ] Edit/Save metadata fields correctly.
-- [ ] `SKILL.md` body (markdown) remains untouched after YAML edit.
-- [ ] Sync script executes and output visible.
-- [ ] `local_only` flag persists in YAML.
+- [x] List all local skills.
+- [x] Inject `AGENTS.md` as a virtual skill.
+- [x] Support `enter`/`v` for full-screen preview.
+- [x] Support `e` for detail/edit screen.
+- [x] Block editing for `virtual:agents`.
+- [x] Edit/Save metadata fields correctly for standard skills.
+- [x] `SKILL.md` body (markdown) remains untouched after YAML edit.
+- [x] Sync script executes and output visible.
+- [x] `local_only` flag persists in YAML.

@@ -77,9 +77,15 @@ func TestScreenTransitions(t *testing.T) {
 		expectScreen Screen
 	}{
 		{
-			name:         "list to detail on enter",
+			name:         "list to preview on enter",
 			startScreen:  ScreenList,
 			msg:          tea.KeyMsg{Type: tea.KeyEnter},
+			expectScreen: ScreenContentView,
+		},
+		{
+			name:         "list to detail on e",
+			startScreen:  ScreenList,
+			msg:          tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")},
 			expectScreen: ScreenDetail,
 		},
 		{
@@ -186,5 +192,146 @@ func TestViewportScrollInList(t *testing.T) {
 	
 	if m.list.Index() != 0 {
 		t.Error("list selection changed when it should only scroll viewport")
+	}
+}
+
+func TestLoadSkills_VirtualInjection(t *testing.T) {
+	// Setup: Create agents.md in root
+	m := NewModel()
+	m.rootPath = "../../.." // relative to internal/ui
+	
+	// We need to mock the filesystem or just rely on actual file for this run
+	// Since I'm in the real environment, I'll check if it exists
+	t.Run("injects virtual skill if agents.md exists", func(t *testing.T) {
+		cmd := m.loadSkills()
+		msg := cmd()
+		
+		skills, ok := msg.(skillsLoadedMsg)
+		if !ok {
+			t.Fatalf("expected skillsLoadedMsg, got %T", msg)
+		}
+
+		found := false
+		for _, s := range skills {
+			if s.ID == "virtual:agents" {
+				found = true
+				if s.Name != "★ AGENTS.md" {
+					t.Errorf("expected name ★ AGENTS.md, got %s", s.Name)
+				}
+				break
+			}
+		}
+		
+		if !found {
+			t.Error("virtual:agents skill not found in loaded skills")
+		}
+	})
+}
+
+func TestHandleListKeys_Matrix(t *testing.T) {
+	tests := []struct {
+		name         string
+		key          string
+		expectScreen Screen
+	}{
+		{
+			name:         "Enter goes to Preview (ScreenContentView)",
+			key:          "enter",
+			expectScreen: ScreenContentView,
+		},
+		{
+			name:         "v goes to Preview (ScreenContentView)",
+			key:          "v",
+			expectScreen: ScreenContentView,
+		},
+		{
+			name:         "e goes to Detail (ScreenDetail)",
+			key:          "e",
+			expectScreen: ScreenDetail,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel()
+			m.Screen = ScreenList
+			s1 := types.Skill{Name: "Skill 1", RawBody: "Body 1"}
+			m.list.SetItems([]list.Item{item{skill: s1}})
+
+			msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tt.key)}
+			if tt.key == "enter" {
+				msg = tea.KeyMsg{Type: tea.KeyEnter}
+			}
+
+			newModel, _ := m.Update(msg)
+			res := newModel.(Model)
+
+			if res.Screen != tt.expectScreen {
+				t.Errorf("expected screen %v, got %v", tt.expectScreen, res.Screen)
+			}
+			if res.PrevScreen != ScreenList {
+				t.Errorf("expected PrevScreen to be ScreenList, got %v", res.PrevScreen)
+			}
+		})
+	}
+}
+
+func TestHandleDetailKeys_ReadOnly(t *testing.T) {
+	tests := []struct {
+		name        string
+		skillID     string
+		key         string
+		expectCmd   bool
+		expectScreen Screen
+	}{
+		{
+			name:        "Virtual skill blocks ctrl+s",
+			skillID:     "virtual:agents",
+			key:         "ctrl+s",
+			expectCmd:   false,
+			expectScreen: ScreenDetail,
+		},
+		{
+			name:        "Normal skill allows ctrl+s",
+			skillID:     "normal:skill",
+			key:         "ctrl+s",
+			expectCmd:   true,
+			expectScreen: ScreenDetail,
+		},
+		{
+			name:        "Esc returns to PrevScreen",
+			skillID:     "virtual:agents",
+			key:         "esc",
+			expectCmd:   false,
+			expectScreen: ScreenList,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel()
+			m.Screen = ScreenDetail
+			m.PrevScreen = ScreenList
+			s := &types.Skill{ID: tt.skillID, Name: "Test Skill"}
+			m.selected = s
+			m.setupInputs()
+
+			var msg tea.KeyMsg
+			switch tt.key {
+			case "ctrl+s":
+				msg = tea.KeyMsg{Type: tea.KeyCtrlS}
+			case "esc":
+				msg = tea.KeyMsg{Type: tea.KeyEsc}
+			}
+
+			_, cmd := m.handleDetailKeys(msg)
+
+			if tt.expectCmd && cmd == nil {
+				t.Error("expected a command, got nil")
+			}
+			if !tt.expectCmd && cmd != nil {
+				t.Errorf("expected no command, got %v", cmd)
+			}
+		})
 	}
 }

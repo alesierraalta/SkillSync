@@ -2,7 +2,7 @@ package ui
 
 import (
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
@@ -27,7 +27,7 @@ type Model struct {
 	viewport       viewport.Model
 	lastSelectedID string
 	selected       *types.Skill
-	inputs     []textinput.Model
+	inputs     []textarea.Model
 	syncOutput string
 	err        error
 	rootPath   string
@@ -52,6 +52,33 @@ func NewModel() Model {
 		list:       l,
 		viewport:   viewport.New(0, 0),
 		rootPath:   ".",
+	}
+}
+
+func (m Model) GetKeyBindings() []KeyBinding {
+	switch m.Screen {
+	case ScreenList:
+		return []KeyBinding{
+			{Key: "q", Help: "quit"},
+			{Key: "enter", Help: "preview"},
+			{Key: "e", Help: "edit"},
+			{Key: "S", Help: "sync"},
+		}
+	case ScreenDetail:
+		return []KeyBinding{
+			{Key: "esc", Help: "back"},
+			{Key: "tab", Help: "switch field"},
+			{Key: "ctrl+s", Help: "save (desc/scope)"},
+		}
+	case ScreenContentView:
+		return []KeyBinding{
+			{Key: "esc", Help: "back"},
+			{Key: "j/k", Help: "scroll"},
+		}
+	default:
+		return []KeyBinding{
+			{Key: "esc", Help: "back"},
+		}
 	}
 }
 
