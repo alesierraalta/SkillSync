@@ -36,8 +36,8 @@ func TestSelectionSync(t *testing.T) {
 			m.Width = 100
 			m.Height = 50
 
-			s1 := types.Skill{Name: "Skill 1", RawBody: "Body 1"}
-			s2 := types.Skill{Name: "Skill 2", RawBody: "Body 2"}
+			s1 := types.Skill{ID: "1", Name: "Skill 1", RawBody: "Body 1"}
+			s2 := types.Skill{ID: "2", Name: "Skill 2", RawBody: "Body 2"}
 			m.list.SetItems([]list.Item{item{skill: s1}, item{skill: s2}})
 			m.viewport.Height = 10
 			m.viewport.Width = 30
@@ -61,8 +61,8 @@ func TestSelectionSync(t *testing.T) {
 				if m.viewport.View() == "" {
 					t.Errorf("expected viewport content for skill %s, but got empty. ID: %s", m.selected.Name, m.lastSelectedID)
 				}
-				if m.lastSelectedID != "Skill 2" {
-					t.Errorf("expected lastSelectedID to be 'Skill 2', got '%s'", m.lastSelectedID)
+				if m.lastSelectedID != "2" {
+					t.Errorf("expected lastSelectedID to be '2', got '%s'", m.lastSelectedID)
 				}
 			}
 		})

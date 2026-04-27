@@ -1,16 +1,19 @@
   Editing Skill: Test
 
-> ┃   1 Test Description                                                      
-┃                                                                           
-┃                                                                           
-┃                                                                           
-┃                                                                           
-┃                                                                           
-  ┃   1 project                                                               
-┃                                                                           
-┃                                                                           
-┃                                                                           
-┃                                                                           
-┃                                                                           
+  Description
+  ╭──────────────────────────────────────────────────────────────────────────╮
+  │┃   1 Test Description                                                    │
+  │┃                                                                         │
+  ╰──────────────────────────────────────────────────────────────────────────╯
+  Scope
+  ┃   1 project                                                             
+  Content (SKILL.md)
+  ┃   1 Content (SKILL.md)                                                  
+  ┃                                                                         
+  ┃                                                                         
+  ┃                                                                         
+  ┃                                                                         
+  ┃                                                                         
+  ┃                                                                         
 
-  esc: back | tab: switch field | ctrl+s: save (desc/scope)  
+  esc: back | tab: switch field | ctrl+s: save (desc/scope/content)  

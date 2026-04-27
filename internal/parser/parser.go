@@ -23,8 +23,9 @@ func Parse(path string) (*types.Skill, error) {
 	
 	if len(parts) < 3 {
 		return &types.Skill{
-			Path:    path,
-			Name:    filepath.Base(filepath.Dir(path)),
+			ID:       filepath.ToSlash(path),
+			Path:     path,
+			Name:     filepath.Base(filepath.Dir(path)),
 			RawBody: content,
 		}, nil
 	}
@@ -40,6 +41,7 @@ func Parse(path string) (*types.Skill, error) {
 	}
 
 	return &types.Skill{
+		ID:       filepath.ToSlash(path),
 		Path:     path,
 		Name:     filepath.Base(filepath.Dir(path)),
 		Prefix:   prefix,
@@ -101,7 +103,7 @@ func Save(path string, skill *types.Skill) error {
 		}
 	}
 
-		finalContent := skill.Prefix + yamlResult + strings.TrimPrefix(body, "\n")
+	finalContent := skill.Prefix + yamlResult + strings.TrimPrefix(body, "\n")
 
 	// Atomic write
 	tmpPath := path + ".tmp"

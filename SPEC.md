@@ -1,6 +1,7 @@
 # TUI Go Skills Specification (sdd/tui-go-skills/spec)
 
 ## Purpose
+
 Interactive tool for local skill frontmatter management. Replaces manual `SKILL.md` editing + CLI `sync.sh`. Built with Go/Bubble Tea.
 
 ---
@@ -8,6 +9,7 @@ Interactive tool for local skill frontmatter management. Replaces manual `SKILL.
 ## Domain: Discovery & Parser
 
 ### Requirement: Skill Discovery
+
 System MUST scan current directory and subfolders for `SKILL.md` files.
 - **Scenario: Found Skills**
   - GIVEN folders `.agent/skills/a` and `.agent/skills/b` with `SKILL.md`.
@@ -19,6 +21,7 @@ System MUST scan current directory and subfolders for `SKILL.md` files.
   - THEN Show empty state message.
 
 ### Requirement: Virtual Injection (AGENTS.md)
+
 The system MUST inject `AGENTS.md` from the root as a virtual skill.
 - **Scenario: AGENTS.md exists**
   - GIVEN `AGENTS.md` in root.
@@ -30,6 +33,7 @@ The system MUST inject `AGENTS.md` from the root as a virtual skill.
   - THEN Markdown MUST be rendered using `glamour` without YAML frontmatter overhead.
 
 ### Requirement: YAML Frontmatter Parsing
+
 System MUST read/write YAML between `---` delimiters in `SKILL.md`.
 - **Scenario: Read metadata**
   - GIVEN `SKILL.md` with `metadata: { name: "test", scope: ["api"] }`.
@@ -44,6 +48,7 @@ System MUST read/write YAML between `---` delimiters in `SKILL.md`.
 `types.Skill` MUST include `Prefix string`.
 
 ### Requirement: Body Content Cleaning
+
 The parser MUST ensure the `RawBody` is clean of leading/trailing whitespace introduced during split.
 - **Scenario: Clean Parsing**
   - GIVEN a skill file with leading newlines after the frontmatter
@@ -140,6 +145,7 @@ TUI MUST re-render Markdown content when window size changes.
 ## Domain: Dynamic Footer (Key Hints)
 
 ### Requirement: Centralized Footer
+
 System MUST replace hardcoded key hints with a dynamic footer component.
 - **Scenario: Render Footer**
   - GIVEN model `m`.
@@ -150,6 +156,7 @@ System MUST replace hardcoded key hints with a dynamic footer component.
   - THEN `renderFooter` updates hints based on current state (e.g., list vs. edit vs. preview).
 
 ### Requirement: Implementation
+
 - **Component**: `renderFooter(m Model) string` in `internal/ui/view.go`.
 - **Styling**: `FooterStyle` in `internal/ui/styles.go` using Lipgloss.
 - **Testing**: Golden files in `internal/ui/view_test.go` for each view state.
@@ -159,6 +166,7 @@ System MUST replace hardcoded key hints with a dynamic footer component.
 ## Domain: Orchestration
 
 ### Requirement: Sync Action
+
 TUI MUST provide key/button to trigger `sync.sh`.
 - **Scenario: Trigger Sync**
   - GIVEN TUI running.
@@ -171,6 +179,7 @@ TUI MUST provide key/button to trigger `sync.sh`.
 ## Testing Phase: Consistency & Risks
 
 ### Requirement Validation
+
 1. **List skills**: Covered (Discovery).
 2. **Parse Frontmatter**: Covered (Parser).
 3. **Interactive UI**: Covered (Field Editing).

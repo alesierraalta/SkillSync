@@ -46,11 +46,11 @@ func TestViewGolden(t *testing.T) {
 				m.updatePreview()
 			}
 			if tt.screen == ScreenContentView {
-				m.selected = &types.Skill{
+				m.list.SetItems([]list.Item{item{skill: types.Skill{
 					Name:    "Test Skill",
 					Prefix:  "# Welcome\n",
 					RawBody: "This is a **test** body.\n\n- Item 1\n- Item 2",
-				}
+				}}})
 				m.viewport.Width = 80
 				m.viewport.Height = 18
 				m.updatePreview()
@@ -60,7 +60,7 @@ func TestViewGolden(t *testing.T) {
 			golden := filepath.Join("testdata", tt.name+".golden")
 
 			// Force update if file doesn't exist
-			if _, err := os.Stat(golden); os.IsNotExist(err) || os.Getenv("UPDATE_GOLDEN") == "true" {
+			if _, err := os.Stat(golden); os.IsNotExist(err) || os.Getenv("UPDATE_GOLDEN") != "" {
 				os.MkdirAll(filepath.Dir(golden), 0755)
 				os.WriteFile(golden, []byte(output), 0644)
 			}

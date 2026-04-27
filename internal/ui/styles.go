@@ -34,4 +34,11 @@ var (
 	footerStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240")).
 			Padding(0, 2)
+
+	focusedTextareaStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("205"))
+
+	blurredTextareaStyle = lipgloss.NewStyle().
+				Border(lipgloss.HiddenBorder())
 )

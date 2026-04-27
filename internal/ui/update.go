@@ -11,12 +11,22 @@ import (
 	"skillsync/tui/internal/types"
 
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 type skillsLoadedMsg []types.Skill
 type errorMsg error
+
+type installerProgressMsg struct {
+	percent float64
+	task    string
+}
+
+type installerFinishedMsg struct {
+	err error
+}
 
 func (m Model) loadSkills() tea.Cmd {
 	return func() tea.Msg {
@@ -57,13 +67,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	switch msg := msg.(type) {
+	case ecosystemMsg:
+		if msg.err != nil {
+			m.StatusMsg = fmt.Sprintf("Error: %v", msg.err)
+		} else {
+			m.StatusMsg = "Ecosistema instanciado"
+		}
+		return m, nil
 	case skillsLoadedMsg:
 		var items []list.Item
 		seen := make(map[string]bool)
 		for _, s := range msg {
-			if !seen[s.Name] {
+			// Deduplicate by path so same skill from different environments show up
+			if !seen[s.Path] {
 				items = append(items, item{skill: s})
-				seen[s.Name] = true
+				seen[s.Path] = true
 			}
 		}
 		cmd = m.list.SetItems(items)
@@ -95,7 +113,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case runner.SyncResult:
 		m.syncOutput = fmt.Sprintf("Exit: %d\nOutput: %s\nErr: %s", msg.ExitCode, msg.Stdout, msg.Stderr)
-		// Don't auto-switch back, let user see result
+		return m, nil
+
+	case installerProgressMsg:
+		m.syncOutput = msg.task
+		cmd = m.Progress.SetPercent(msg.percent)
+		return m, tea.Batch(cmd, nextInstallerStep(m, msg.percent))
+
+	case progress.FrameMsg:
+		progressModel, cmd := m.Progress.Update(msg)
+		m.Progress = progressModel.(progress.Model)
+		return m, cmd
+
+	case installerFinishedMsg:
+		if msg.err != nil {
+			m.StatusMsg = fmt.Sprintf("Error: %v", msg.err)
+		} else {
+			m.StatusMsg = "Instalación completada con éxito"
+		}
+		m.Screen = ScreenHome
 		return m, nil
 
 	case errorMsg:
@@ -114,6 +150,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch m.Screen {
+	case ScreenHome:
+		return m.handleHomeKeys(msg)
 	case ScreenList:
 		return m.handleListKeys(msg)
 	case ScreenDetail:
@@ -122,8 +160,35 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSyncingKeys(msg)
 	case ScreenContentView:
 		return m.handleContentViewKeys(msg)
+	case ScreenInstaller:
+		return m.handleInstallerKeys(msg)
 	}
 
+	return m, nil
+}
+
+func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.HomeCursor > 0 {
+			m.HomeCursor--
+		}
+	case "down", "j":
+		if m.HomeCursor < 1 {
+			m.HomeCursor++
+		}
+	case "enter", " ":
+		if m.HomeCursor == 0 {
+			m.Screen = ScreenInstaller
+			m.installerCursor = 0
+			return m, nil
+		} else if m.HomeCursor == 1 {
+			m.Screen = ScreenList
+			return m, nil
+		}
+	case "esc", "q":
+		return m, tea.Quit
+	}
 	return m, nil
 }
 
@@ -151,6 +216,10 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.PrevScreen = m.Screen
 		m.Screen = ScreenSyncing
 		return m, m.startSync()
+	case "esc":
+		m.Screen = ScreenHome
+		m.HomeCursor = 0
+		return m, nil
 	case "pgup", "pgdown":
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
@@ -161,7 +230,7 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.list, cmd = m.list.Update(msg)
 
 	if i, ok := m.list.SelectedItem().(item); ok {
-		if i.skill.Name != m.lastSelectedID {
+		if i.skill.ID != m.lastSelectedID {
 			m.updatePreview()
 		}
 	}
@@ -184,18 +253,26 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// just in case they aren't syncing.
 		m.selected.Metadata.Description = m.inputs[0].Value()
 		m.selected.Metadata.Scope = m.inputs[1].Value()
+		m.selected.RawBody = m.inputs[2].Value()
 		return m, m.saveSkill()
 	case "tab":
 		if m.inputs[0].Focused() {
 			m.inputs[0].Blur()
 			m.inputs[1].Focus()
-		} else {
+		} else if m.inputs[1].Focused() {
 			m.inputs[1].Blur()
+			m.inputs[2].Focus()
+		} else {
+			m.inputs[2].Blur()
 			m.inputs[0].Focus()
 		}
 		return m, nil
 	case "enter":
-		// Suppress Enter to prevent newlines in textarea
+		if m.inputs[2].Focused() {
+			// Allow Enter for content textarea
+			break
+		}
+		// Suppress Enter for Description/Scope to prevent newlines
 		return m, nil
 	}
 
@@ -226,11 +303,51 @@ func (m Model) handleContentViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.Screen = m.PrevScreen
 		return m, nil
+	case "e":
+		if m.selected != nil {
+			m.PrevScreen = m.Screen
+			m.Screen = ScreenDetail
+			m.setupInputs()
+			return m, nil
+		}
 	}
 
 	var cmd tea.Cmd
 	m.viewport, cmd = m.viewport.Update(msg)
 	return m, cmd
+}
+
+func (m Model) handleInstallerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.Screen = ScreenHome
+		return m, nil
+	case "up", "k":
+		if m.installerCursor > 0 {
+			m.installerCursor--
+		}
+	case "down", "j":
+		if m.installerCursor < 9 {
+			m.installerCursor++
+		}
+	case "m", "M":
+		m.installerMode = !m.installerMode
+	case "space", "enter":
+		if m.installerCursor >= 0 && m.installerCursor < 5 {
+			m.installerProviders[m.installerCursor] = !m.installerProviders[m.installerCursor]
+		} else if m.installerCursor >= 5 && m.installerCursor < 8 {
+			m.installerSkills[m.installerCursor-5] = !m.installerSkills[m.installerCursor-5]
+		} else if m.installerCursor == 8 {
+			m.installerGlobal = !m.installerGlobal
+		} else if m.installerCursor == 9 && msg.String() == "enter" {
+			// Execute install
+			m.PrevScreen = m.Screen
+			m.Screen = ScreenSyncing
+			m.syncOutput = "Preparando instalación..."
+			return m, runInstallerCmd(m)
+		}
+	}
+	return m, nil
 }
 
 func (m Model) handleComponentUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -249,12 +366,28 @@ func (m Model) handleComponentUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) setupInputs() {
-	m.inputs = make([]textarea.Model, 2)
+	m.inputs = make([]textarea.Model, 3)
 	isReadOnly := m.selected != nil && m.selected.ID == "virtual:agents"
+
+	// Overhead calculation for ScreenDetail to ensure content fits
+	// Title: 2
+	// Labels: 3
+	// Metadata areas: 4 (Desc) + 3 (Scope) = 7
+	// Gaps: 3
+	// Footer: 2
+	// Total: 17
+	overhead := 17
+	contentHeight := m.Height - overhead
+	if contentHeight < 4 {
+		contentHeight = 4 // Absolute minimum
+	}
 
 	d := textarea.New()
 	d.Placeholder = "Description"
-	d.SetWidth(m.Width - 4)
+	d.SetWidth(m.Width - 6)
+	d.SetHeight(2)
+	d.FocusedStyle.Base = focusedTextareaStyle
+	d.BlurredStyle.Base = blurredTextareaStyle
 	if m.selected != nil {
 		d.SetValue(m.selected.Metadata.Description)
 	}
@@ -265,11 +398,25 @@ func (m *Model) setupInputs() {
 
 	s := textarea.New()
 	s.Placeholder = "Scope"
-	s.SetWidth(m.Width - 4)
+	s.SetWidth(m.Width - 6)
+	s.SetHeight(1)
+	s.FocusedStyle.Base = focusedTextareaStyle
+	s.BlurredStyle.Base = blurredTextareaStyle
 	if m.selected != nil {
 		s.SetValue(m.selected.Metadata.Scope)
 	}
 	m.inputs[1] = s
+
+	c := textarea.New()
+	c.Placeholder = "Content (SKILL.md)"
+	c.SetWidth(m.Width - 6)
+	c.SetHeight(contentHeight)
+	c.FocusedStyle.Base = focusedTextareaStyle
+	c.BlurredStyle.Base = blurredTextareaStyle
+	if m.selected != nil {
+		c.SetValue(m.selected.RawBody)
+	}
+	m.inputs[2] = c
 }
 
 func (m Model) startSync() tea.Cmd {
@@ -286,6 +433,7 @@ func (m Model) saveSkill() tea.Cmd {
 	}
 	m.selected.Metadata.Description = m.inputs[0].Value()
 	m.selected.Metadata.Scope = m.inputs[1].Value()
+	m.selected.RawBody = m.inputs[2].Value()
 
 	return func() tea.Msg {
 		err := parser.Save(m.selected.Path, m.selected)

@@ -1,21 +1,21 @@
   Content: Test Skill
 
                                                                                 
+  # Test Skill                                                                  
+                                                                                
+  **Description:** No description provided                                      
+  **Scope:** No scope specified                                                 
+                                                                                
+  *e Edit content*                                                              
+                                                                                
+  --------                                                                      
+                                                                                
+  # Welcome                                                                     
+                                                                                
+  This is a **test** body.                                                      
+                                                                                
+  • Item 1                                                                      
+  • Item 2                                                                      
                                                                                 
                                                                                 
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-                                                                                
-  esc: back | j/k: scroll  
+  esc: back | e: edit content | j/k: scroll  

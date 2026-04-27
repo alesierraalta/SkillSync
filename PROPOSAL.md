@@ -1,6 +1,7 @@
 # Proposal: TUI Go Skills Management
 
 ## Intent
+
 Current skill management manual. Editing `SKILL.md` frontmatter + running `sync.sh` prone to error. Need interactive tool for local browsing, editing, and syncing.
 
 ## Scope
@@ -27,6 +28,7 @@ Current skill management manual. Editing `SKILL.md` frontmatter + running `sync.
 - None.
 
 ## Approach
+
 - Stack: Go 1.21+, Bubble Tea, Lip Gloss.
 - Standard "gentleman-bubbletea" structure:
   - `Model`: tracks skill list, selection, edit state.

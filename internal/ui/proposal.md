@@ -1,9 +1,11 @@
 # Proposal: Footer Keybindings Expansion
 
 ## Intent
+
 Footer currently hardcoded in `internal/ui/view.go`. Inflexible, hard to maintain. Need dynamic keybinding rendering based on active UI state.
 
 ## Scope
+
 ### In Scope
 - Define `KeyBinding` struct (key, action).
 - Implement `GetKeyBindings()` method in `Model` to return bindings for current `Screen`.
@@ -21,6 +23,7 @@ Footer currently hardcoded in `internal/ui/view.go`. Inflexible, hard to maintai
 4. Ensure `handle...` functions in `update.go` maintain consistency.
 
 ## Affected Areas
+
 | Area | Impact | Description |
 |------|--------|-------------|
 | `internal/ui/model.go` | New | Define `KeyBinding` struct. |
