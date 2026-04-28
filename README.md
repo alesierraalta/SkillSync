@@ -9,8 +9,14 @@ Skillsync TUI is the central hub for discovering, managing, and testing skills a
 ## 🚀 Getting Started
 
 1. **Prerequisites**: [Go](https://golang.org/dl/) (1.21+)
-2. **Launch**: `go run ./cmd/tui`
-3. **Explore**: Use `j/k` to navigate and `enter` to select a skill.
+2. **Global Install**: 
+   ```powershell
+   go run ./cmd/synck -g
+   ```
+3. **Launch**: Just run `synck` from any project.
+4. **Explore**: Use `j/k` to navigate and `enter` to select a skill.
+
+*Note: For Windows, ensure `%USERPROFILE%\go\bin` is in your PATH.*
 
 ## 📚 Documentation Index
 

@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"skillsync/tui/internal/coreskills"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -47,15 +49,8 @@ func nextInstallerStep(m Model, currentPercent float64) tea.Cmd {
 			for i, enabled := range m.installerSkills {
 				if enabled {
 					sk := skills[i]
-					dir := filepath.Join(".agents", "skills", sk)
-					_ = os.MkdirAll(dir, 0755)
-					skillFile := filepath.Join(dir, "SKILL.md")
-					if _, err := os.Stat(skillFile); os.IsNotExist(err) {
-						desc := coreSkills[sk]
-						if desc == "" {
-							desc = "Core skill for SkillSync."
-						}
-						_ = os.WriteFile(skillFile, []byte("# "+sk+"\n\n"+desc), 0644)
+					if err := installCoreSkill(sk); err != nil {
+						return installerFinishedMsg{err: err}
 					}
 				}
 			}
@@ -90,29 +85,11 @@ func nextInstallerStep(m Model, currentPercent float64) tea.Cmd {
 
 func instantiateEcosystemCmd() tea.Cmd {
 	return func() tea.Msg {
-		skillsDir := filepath.Join(".agents", "skills")
-		dirs := []string{
-			filepath.Join(skillsDir, "skill-creator"),
-			filepath.Join(skillsDir, "skill-sync"),
-			filepath.Join(skillsDir, "find-skills"),
-		}
+		skills := []string{"skill-creator", "skill-sync", "find-skills"}
 
-		for _, dir := range dirs {
-			if err := os.MkdirAll(dir, 0755); err != nil {
+		for _, sk := range skills {
+			if err := installCoreSkill(sk); err != nil {
 				return ecosystemMsg{err: err}
-			}
-
-			skillFile := filepath.Join(dir, "SKILL.md")
-			if _, err := os.Stat(skillFile); os.IsNotExist(err) {
-				sk := filepath.Base(dir)
-				desc := coreSkills[sk]
-				if desc == "" {
-					desc = "Core skill for SkillSync."
-				}
-				content := []byte("# Skill " + sk + "\n\n" + desc)
-				if err := os.WriteFile(skillFile, content, 0644); err != nil {
-					return ecosystemMsg{err: err}
-				}
 			}
 		}
 
@@ -126,4 +103,36 @@ func instantiateEcosystemCmd() tea.Cmd {
 
 		return ecosystemMsg{err: nil}
 	}
+}
+
+func installCoreSkill(name string) error {
+	destDir := filepath.Join(".agents", "skills", name)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return err
+	}
+
+	srcDir := "skills/" + name
+	return fs.WalkDir(coreskills.EmbeddedSkills, srcDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+		
+		targetPath := filepath.Join(destDir, relPath)
+
+		if d.IsDir() {
+			return os.MkdirAll(targetPath, 0755)
+		}
+
+		data, err := coreskills.EmbeddedSkills.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		return os.WriteFile(targetPath, data, 0644)
+	})
 }
