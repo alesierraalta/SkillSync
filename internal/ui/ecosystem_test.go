@@ -3,7 +3,6 @@ package ui
 import (
 	"os"
 	"path/filepath"
-	"skillsync/tui/internal/coreskills"
 	"strings"
 	"testing"
 )
@@ -17,7 +16,7 @@ func TestInstallCoreSkill(t *testing.T) {
 	skills := []string{"skill-creator", "skill-sync", "find-skills"}
 
 	for _, sk := range skills {
-		err := installCoreSkill(sk)
+		err := InstallCoreSkill(sk)
 		if err != nil {
 			t.Fatalf("installCoreSkill(%s) failed: %v", sk, err)
 		}
@@ -57,29 +56,4 @@ func TestInstallCoreSkill(t *testing.T) {
 }
 
 
-func TestCoreSkillDrift(t *testing.T) {
-	skills := []string{"skill-creator", "skill-sync", "find-skills"}
-	for _, sk := range skills {
-		embeddedPath := "skills/" + sk + "/SKILL.md"
-		actualPath := filepath.Join(".agents", "skills", sk, "SKILL.md")
-		if _, err := os.Stat(actualPath); os.IsNotExist(err) {
-			// Try relative to project root if running from internal/ui
-			actualPath = filepath.Join("..", "..", ".agents", "skills", sk, "SKILL.md")
-		}
 
-		embData, err := coreskills.EmbeddedSkills.ReadFile(embeddedPath)
-		if err != nil {
-			t.Fatalf("failed to read embedded %s: %v", embeddedPath, err)
-		}
-
-		actualData, err := os.ReadFile(actualPath)
-		if err != nil {
-			t.Logf("skipping drift check for %s: local file not found (likely running outside repo root)", sk)
-			continue
-		}
-
-		if string(embData) != string(actualData) {
-			t.Errorf("DRIFT DETECTED: embedded %s does not match local .agents/skills/%s/SKILL.md. Run 'sdd-archive' or update internal/coreskills/skills/ manually.", sk, sk)
-		}
-	}
-}

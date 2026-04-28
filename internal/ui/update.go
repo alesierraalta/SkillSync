@@ -132,7 +132,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.StatusMsg = "Instalación completada con éxito"
 		}
 		m.Screen = ScreenHome
-		return m, nil
+		return m, m.loadSkills()
 
 	case errorMsg:
 		m.err = msg
@@ -184,7 +184,7 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		} else if m.HomeCursor == 1 {
 			m.Screen = ScreenList
-			return m, nil
+			return m, m.loadSkills()
 		}
 	case "esc", "q":
 		return m, tea.Quit

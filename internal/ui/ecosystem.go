@@ -49,7 +49,7 @@ func nextInstallerStep(m Model, currentPercent float64) tea.Cmd {
 			for i, enabled := range m.installerSkills {
 				if enabled {
 					sk := skills[i]
-					if err := installCoreSkill(sk); err != nil {
+					if err := InstallCoreSkill(sk); err != nil {
 						return installerFinishedMsg{err: err}
 					}
 				}
@@ -88,7 +88,7 @@ func instantiateEcosystemCmd() tea.Cmd {
 		skills := []string{"skill-creator", "skill-sync", "find-skills"}
 
 		for _, sk := range skills {
-			if err := installCoreSkill(sk); err != nil {
+			if err := InstallCoreSkill(sk); err != nil {
 				return ecosystemMsg{err: err}
 			}
 		}
@@ -105,7 +105,7 @@ func instantiateEcosystemCmd() tea.Cmd {
 	}
 }
 
-func installCoreSkill(name string) error {
+func InstallCoreSkill(name string) error {
 	destDir := filepath.Join(".agents", "skills", name)
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return err

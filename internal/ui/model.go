@@ -95,7 +95,7 @@ func NewModel() Model {
 		rootPath:           ".",
 		Progress:           progress.New(progress.WithDefaultGradient()),
 		installerProviders: []bool{true, false, true, false, true},
-		installerSkills:    []bool{true, true, false},
+		installerSkills:    []bool{true, true, true},
 		installerGlobal:    true,
 	}
 }

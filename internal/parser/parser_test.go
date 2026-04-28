@@ -202,3 +202,79 @@ description: Test
 		t.Errorf("Prefix lost or corrupted, got: %q", final)
 	}
 }
+
+
+func TestParseModernMetadata(t *testing.T) {
+	content := `---
+name: modern-skill
+description: Modern description
+metadata:
+  scope: [root]
+  auto_invoke:
+    - Test action
+---
+# Body`
+	
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "SKILL.md")
+	os.WriteFile(path, []byte(content), 0644)
+
+	skill, err := Parse(path)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	if skill.Metadata.Description != "Modern description" {
+		t.Errorf("Expected description 'Modern description', got %q", skill.Metadata.Description)
+	}
+
+	if skill.Metadata.Scope != "root" {
+		t.Errorf("Expected scope 'root', got %q", skill.Metadata.Scope)
+	}
+}
+
+func TestParseFlexibleScope(t *testing.T) {
+	tests := []struct {
+		name     string
+		yaml     string
+		expScope string
+	}{
+		{
+			name: "Nested List",
+			yaml: "---\nmetadata:\n  scope: [ui, root]\n---",
+			expScope: "ui, root",
+		},
+		{
+			name: "Nested String",
+			yaml: "---\nmetadata:\n  scope: api\n---",
+			expScope: "api",
+		},
+		{
+			name: "Top Level List",
+			yaml: "---\nscope: [common, infra]\n---",
+			expScope: "common, infra",
+		},
+		{
+			name: "Top Level String",
+			yaml: "---\nscope: root\n---",
+			expScope: "root",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			path := filepath.Join(tmp, "SKILL.md")
+			os.WriteFile(path, []byte(tt.yaml+"\n# Body"), 0644)
+
+			skill, err := Parse(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if skill.Metadata.Scope != tt.expScope {
+				t.Errorf("Scope = %q, want %q", skill.Metadata.Scope, tt.expScope)
+			}
+		})
+	}
+}

@@ -34,10 +34,34 @@ func Parse(path string) (*types.Skill, error) {
 	yamlStr := parts[1]
 	body := strings.TrimSpace(parts[2])
 
-	var meta types.Metadata
-	err = yaml.Unmarshal([]byte(yamlStr), &meta)
+	var flexible struct {
+		Description string      `yaml:"description"`
+		AutoInvoke  interface{} `yaml:"auto_invoke"`
+		Scope       interface{} `yaml:"scope"`
+		LocalOnly   bool        `yaml:"local_only"`
+		Metadata    struct {
+			Scope interface{} `yaml:"scope"`
+		} `yaml:"metadata"`
+	}
+
+	err = yaml.Unmarshal([]byte(yamlStr), &flexible)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal YAML: %w", err)
+	}
+
+	var meta types.Metadata
+	meta.Description = flexible.Description
+	meta.LocalOnly = flexible.LocalOnly
+	
+	// Handle AutoInvoke as bool safely
+	if b, ok := flexible.AutoInvoke.(bool); ok {
+		meta.AutoInvoke = b
+	}
+
+	if flexible.Metadata.Scope != nil {
+		meta.Scope = normalizeScope(flexible.Metadata.Scope)
+	} else if flexible.Scope != nil {
+		meta.Scope = normalizeScope(flexible.Scope)
 	}
 
 	return &types.Skill{
@@ -151,4 +175,21 @@ func updateMappingNode(mapping *yaml.Node, meta types.Metadata) {
 			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: fmt.Sprintf("%v", v)},
 		)
 	}
+}
+
+
+func normalizeScope(v interface{}) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case []interface{}:
+		var parts []string
+		for _, p := range val {
+			if s, ok := p.(string); ok {
+				parts = append(parts, s)
+			}
+		}
+		return strings.Join(parts, ", ")
+	}
+	return ""
 }

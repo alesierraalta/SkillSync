@@ -9,33 +9,45 @@ import (
 )
 
 func main() {
-	globalInstall := flag.Bool("g", false, "Install synck globally")
-	
-	// Handle 'install -g' sub-style if needed
-	if len(os.Args) > 1 && os.Args[1] == "install" {
-		// Shift args for flag parser
-		os.Args = append(os.Args[:1], os.Args[2:]...)
-	}
-
-	flag.Parse()
-
-	if *globalInstall {
-		fmt.Println("🚀 Installing synck globally...")
-		result := install.GlobalInstall()
-		if !result.Success {
-			fmt.Printf("❌ %s\n", result.Message)
-			if result.Error != nil {
-				fmt.Printf("Error: %v\n", result.Error)
-			}
-			os.Exit(1)
-		}
-		fmt.Println(result.Message)
-		return
-	}
-
-	// Normal TUI launch
-	if err := ui.Run(); err != nil {
+	if err := run(os.Args); err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// GlobalInstaller is a function that performs the global installation.
+// It can be swapped in tests to avoid actual installation.
+var GlobalInstaller = install.GlobalInstall
+var TUIRunner = ui.Run
+
+func run(args []string) error {
+	f := flag.NewFlagSet(args[0], flag.ContinueOnError)
+	globalInstall := f.Bool("g", false, "Install synck globally")
+
+	// Handle 'install -g' sub-style
+	actualArgs := args[1:]
+	if len(actualArgs) > 0 && actualArgs[0] == "install" {
+		actualArgs = actualArgs[1:]
+	}
+
+	if err := f.Parse(actualArgs); err != nil {
+		return err
+	}
+
+	if *globalInstall {
+		fmt.Println("🚀 Installing synck globally...")
+		result := GlobalInstaller()
+		if !result.Success {
+			fmt.Printf("❌ %s\n", result.Message)
+			if result.Error != nil {
+				return result.Error
+			}
+			return fmt.Errorf("%s", result.Message)
+		}
+		fmt.Println(result.Message)
+		return nil
+	}
+
+	// Normal TUI launch
+	return TUIRunner()
 }
