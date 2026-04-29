@@ -54,6 +54,26 @@ func nextInstallerStep(m Model, currentPercent float64) tea.Cmd {
 					}
 				}
 			}
+			return installerProgressMsg{percent: 0.5, task: "Instalando skills desde almacenamiento..."}
+
+		case 0.5:
+			// 2.5 Install Stored Skills
+			for i, enabled := range m.installerStoredSkills {
+				if enabled && i < len(m.storedSkills) {
+					stored := m.storedSkills[i]
+					content, err := m.storageService.Load(stored.ID)
+					if err != nil {
+						return installerFinishedMsg{err: err}
+					}
+					destDir := filepath.Join(".agents", "skills", stored.Metadata.SkillName)
+					if err := os.MkdirAll(destDir, 0755); err != nil {
+						return installerFinishedMsg{err: err}
+					}
+					if err := os.WriteFile(filepath.Join(destDir, "SKILL.md"), []byte(content), 0644); err != nil {
+						return installerFinishedMsg{err: err}
+					}
+				}
+			}
 			return installerProgressMsg{percent: 0.6, task: "Sincronizando configuraciones..."}
 
 		case 0.6:

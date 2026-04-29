@@ -8,7 +8,9 @@ import (
 	"skillsync/tui/internal/discovery"
 	"skillsync/tui/internal/parser"
 	"skillsync/tui/internal/runner"
+	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/types"
+	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
@@ -27,6 +29,9 @@ type installerProgressMsg struct {
 type installerFinishedMsg struct {
 	err error
 }
+
+type storedSkillsLoadedMsg []storage.StoredSkill
+type statusMsg string
 
 func (m Model) loadSkills() tea.Cmd {
 	return func() tea.Msg {
@@ -134,6 +139,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Screen = ScreenHome
 		return m, m.loadSkills()
 
+	case storedSkillsLoadedMsg:
+		var items []list.Item
+		m.storedSkills = []storage.StoredSkill(msg)
+		for _, s := range msg {
+			items = append(items, storageItem{stored: s})
+		}
+		cmd = m.storageList.SetItems(items)
+		if m.Screen == ScreenInstaller {
+			m.installerStoredSkills = make([]bool, len(msg))
+		}
+		return m, cmd
+
+	case statusMsg:
+		m.StatusMsg = string(msg)
+		return m, nil
+
 	case errorMsg:
 		m.err = msg
 		return m, nil
@@ -162,6 +183,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleContentViewKeys(msg)
 	case ScreenInstaller:
 		return m.handleInstallerKeys(msg)
+	case ScreenStorage:
+		return m.handleStorageKeys(msg)
 	}
 
 	return m, nil
@@ -174,7 +197,7 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.HomeCursor--
 		}
 	case "down", "j":
-		if m.HomeCursor < 1 {
+		if m.HomeCursor < 2 {
 			m.HomeCursor++
 		}
 	case "enter", " ":
@@ -185,7 +208,23 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.HomeCursor == 1 {
 			m.Screen = ScreenList
 			return m, m.loadSkills()
+		} else if m.HomeCursor == 2 {
+			m.Screen = ScreenStorage
+			return m, m.loadStoredSkillsCmd()
 		}
+	case "1":
+		m.HomeCursor = 0
+		m.Screen = ScreenInstaller
+		m.installerCursor = 0
+		return m, nil
+	case "2":
+		m.HomeCursor = 1
+		m.Screen = ScreenList
+		return m, m.loadSkills()
+	case "3":
+		m.HomeCursor = 2
+		m.Screen = ScreenStorage
+		return m, m.loadStoredSkillsCmd()
 	case "esc", "q":
 		return m, tea.Quit
 	}
@@ -212,10 +251,12 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setupInputs()
 			return m, nil
 		}
-	case "s":
+	case "S":
 		m.PrevScreen = m.Screen
 		m.Screen = ScreenSyncing
 		return m, m.startSync()
+	case "s":
+		return m, m.saveToStorageCmd()
 	case "esc":
 		m.Screen = ScreenHome
 		m.HomeCursor = 0
@@ -327,19 +368,25 @@ func (m Model) handleInstallerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.installerCursor--
 		}
 	case "down", "j":
-		if m.installerCursor < 9 {
+		if m.installerCursor < 9+len(m.storedSkills) {
 			m.installerCursor++
 		}
 	case "m", "M":
 		m.installerMode = !m.installerMode
 	case "space", "enter":
+		storageOffset := len(m.storedSkills)
 		if m.installerCursor >= 0 && m.installerCursor < 5 {
 			m.installerProviders[m.installerCursor] = !m.installerProviders[m.installerCursor]
 		} else if m.installerCursor >= 5 && m.installerCursor < 8 {
 			m.installerSkills[m.installerCursor-5] = !m.installerSkills[m.installerCursor-5]
-		} else if m.installerCursor == 8 {
+		} else if m.installerCursor >= 8 && m.installerCursor < 8+storageOffset {
+			idx := m.installerCursor - 8
+			if idx < len(m.installerStoredSkills) {
+				m.installerStoredSkills[idx] = !m.installerStoredSkills[idx]
+			}
+		} else if m.installerCursor == 8+storageOffset {
 			m.installerGlobal = !m.installerGlobal
-		} else if m.installerCursor == 9 && msg.String() == "enter" {
+		} else if m.installerCursor == 9+storageOffset && msg.String() == "enter" {
 			// Execute install
 			m.PrevScreen = m.Screen
 			m.Screen = ScreenSyncing
@@ -361,6 +408,8 @@ func (m Model) handleComponentUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case ScreenContentView:
 		m.viewport, cmd = m.viewport.Update(msg)
+	case ScreenStorage:
+		m.storageList, cmd = m.storageList.Update(msg)
 	}
 	return m, cmd
 }
@@ -442,4 +491,54 @@ func (m Model) saveSkill() tea.Cmd {
 		}
 		return m.loadSkills()()
 	}
+}
+
+func (m Model) loadStoredSkillsCmd() tea.Cmd {
+	return func() tea.Msg {
+		skills, err := m.storageService.List()
+		if err != nil {
+			return errorMsg(err)
+		}
+		return storedSkillsLoadedMsg(skills)
+	}
+}
+
+func (m Model) saveToStorageCmd() tea.Cmd {
+	if m.selected == nil {
+		return nil
+	}
+	
+	// Create a copy to avoid race conditions if needed
+	skill := *m.selected
+	
+	// Metadata from the current context
+	absPath, _ := filepath.Abs(m.rootPath)
+	metadata := storage.StoredMetadata{
+		SkillName:     skill.Name,
+		Description:   skill.Metadata.Description,
+		OriginProject: absPath,
+		OriginPath:    skill.Path,
+		SavedAt:       time.Now(),
+	}
+
+	return func() tea.Msg {
+		err := m.storageService.Save(&skill, metadata)
+		if err != nil {
+			return errorMsg(err)
+		}
+		return statusMsg(fmt.Sprintf("Skill '%s' guardada en almacenamiento global", skill.Name))
+	}
+}
+
+func (m Model) handleStorageKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.Screen = ScreenHome
+		m.HomeCursor = 2
+		return m, nil
+	}
+	
+	var cmd tea.Cmd
+	m.storageList, cmd = m.storageList.Update(msg)
+	return m, cmd
 }

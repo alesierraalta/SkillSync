@@ -89,9 +89,9 @@ func TestScreenTransitions(t *testing.T) {
 			expectScreen: ScreenDetail,
 		},
 		{
-			name:         "list to syncing on s",
+			name:         "list to syncing on S",
 			startScreen:  ScreenList,
-			msg:          tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")},
+			msg:          tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("S")},
 			expectScreen: ScreenSyncing,
 		},
 		{
@@ -117,6 +117,18 @@ func TestScreenTransitions(t *testing.T) {
 			startScreen:  ScreenContentView,
 			msg:          tea.KeyMsg{Type: tea.KeyEsc},
 			expectScreen: ScreenList,
+		},
+		{
+			name:         "home to storage on 3",
+			startScreen:  ScreenHome,
+			msg:          tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("3")},
+			expectScreen: ScreenStorage,
+		},
+		{
+			name:         "storage to home on esc",
+			startScreen:  ScreenStorage,
+			msg:          tea.KeyMsg{Type: tea.KeyEsc},
+			expectScreen: ScreenHome,
 		},
 	}
 
@@ -249,6 +261,16 @@ func TestHandleListKeys_Matrix(t *testing.T) {
 			key:          "e",
 			expectScreen: ScreenDetail,
 		},
+		{
+			name:         "S goes to Syncing (ScreenSyncing)",
+			key:          "S",
+			expectScreen: ScreenSyncing,
+		},
+		{
+			name:         "s stays on List (triggers save command)",
+			key:          "s",
+			expectScreen: ScreenList,
+		},
 	}
 
 	for _, tt := range tests {
@@ -269,7 +291,7 @@ func TestHandleListKeys_Matrix(t *testing.T) {
 			if res.Screen != tt.expectScreen {
 				t.Errorf("expected screen %v, got %v", tt.expectScreen, res.Screen)
 			}
-			if res.PrevScreen != ScreenList {
+			if tt.expectScreen != ScreenList && res.PrevScreen != ScreenList {
 				t.Errorf("expected PrevScreen to be ScreenList, got %v", res.PrevScreen)
 			}
 		})

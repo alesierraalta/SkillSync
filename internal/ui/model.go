@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/types"
 )
 
@@ -23,6 +24,7 @@ const (
 	ScreenSyncing
 	ScreenContentView
 	ScreenInstaller
+	ScreenStorage
 )
 
 type Model struct {
@@ -48,12 +50,30 @@ type Model struct {
 	installerMode      bool // false = Symlink, true = Copy
 	installerProviders []bool
 	installerSkills    []bool
-	installerGlobal    bool
+	installerGlobal       bool
+	installerStoredSkills []bool
+
+	// Storage State
+	storageList    list.Model
+	storedSkills   []storage.StoredSkill
+	storageService *storage.Service
 }
 
 type item struct {
 	skill types.Skill
 }
+
+type storageItem struct {
+	stored storage.StoredSkill
+}
+
+func (i storageItem) Title() string {
+	return fmt.Sprintf("%s [%s]", i.stored.Metadata.SkillName, filepath.Base(i.stored.Metadata.OriginProject))
+}
+func (i storageItem) Description() string {
+	return fmt.Sprintf("Stored at: %s | Project: %s", i.stored.Metadata.SavedAt.Format("2006-01-02 15:04"), i.stored.Metadata.OriginProject)
+}
+func (i storageItem) FilterValue() string { return i.stored.Metadata.SkillName }
 
 func (i item) Title() string {
 	if i.skill.ID == "virtual:agents" {
@@ -87,16 +107,21 @@ func NewModel() Model {
 	l := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	l.Title = "Skillsync TUI"
 
+	sl := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	sl.Title = "Almacenamiento Global"
+
 	return Model{
 		Screen:             ScreenHome,
 		PrevScreen:         ScreenHome,
 		list:               l,
+		storageList:        sl,
 		viewport:           viewport.New(0, 0),
 		rootPath:           ".",
 		Progress:           progress.New(progress.WithDefaultGradient()),
 		installerProviders: []bool{true, false, true, false, true},
 		installerSkills:    []bool{true, true, true},
 		installerGlobal:    true,
+		storageService:     storage.NewService(""),
 	}
 }
 
@@ -113,6 +138,7 @@ func (m Model) GetKeyBindings() []KeyBinding {
 			{Key: "q", Help: "quit"},
 			{Key: "enter", Help: "preview"},
 			{Key: "e", Help: "edit skill"},
+			{Key: "s", Help: "save globally"},
 			{Key: "S", Help: "sync"},
 		}
 	case ScreenDetail:
@@ -133,6 +159,11 @@ func (m Model) GetKeyBindings() []KeyBinding {
 			{Key: "up/down", Help: "navigate"},
 			{Key: "space", Help: "toggle"},
 			{Key: "enter", Help: "execute/select"},
+		}
+	case ScreenStorage:
+		return []KeyBinding{
+			{Key: "esc", Help: "back"},
+			{Key: "up/down", Help: "navigate"},
 		}
 	default:
 		return []KeyBinding{
