@@ -504,12 +504,19 @@ func (m Model) loadStoredSkillsCmd() tea.Cmd {
 }
 
 func (m Model) saveToStorageCmd() tea.Cmd {
-	if m.selected == nil {
+	target := m.selected
+	if target == nil {
+		if i, ok := m.list.SelectedItem().(item); ok {
+			target = &i.skill
+		}
+	}
+
+	if target == nil {
 		return nil
 	}
 	
 	// Create a copy to avoid race conditions if needed
-	skill := *m.selected
+	skill := *target
 	
 	// Metadata from the current context
 	absPath, _ := filepath.Abs(m.rootPath)

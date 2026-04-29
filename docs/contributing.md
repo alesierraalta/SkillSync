@@ -9,11 +9,24 @@ Thank you for your interest in improving Skillsync TUI!
 3. **Run the TUI**: `go run ./cmd/tui`.
 4. **Explore the Docs**: Read `docs/architecture.md` to understand the layout.
 
+## Development Install Workflow
+
+If you have made local changes and want to test the full installation and skill ecosystem:
+
+1. **Launch the TUI**: Run `go run ./cmd/synck`.
+2. **Initialize Project**: If the project isn't initialized, the **Installer** screen will launch.
+3. **Select Providers**: Toggle your desired AI providers (e.g., Claude, Gemini).
+4. **Execute Install**: Trigger the installation action.
+5. **Verify Output**: Confirm that `AGENTS.md`, `CLAUDE.md`, and other selected provider files are generated in the project root.
+
 ## Development Rules
 
 - **Source Evidence**: When modifying logic, always provide source evidence (file and line) in your pull request.
 - **SDD First**: For any new feature, start with a proposal and specs.
 - **Test Everything**: Add unit tests for logic and `teatest` scenarios for UI changes.
+  - Run the full suite: `go test ./...`.
+  - Target UI/Storage tests: `go test ./internal/ui/...` and `go test ./internal/storage/...`.
+  - Verify installer side effects by checking for generated files in temporary test directories.
 - **No Direct Edits**: Do not modify generated files like `AGENTS.md` directly. Update the source `SKILL.md` or templates.
 
 ## Code Style

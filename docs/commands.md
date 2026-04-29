@@ -12,7 +12,8 @@ When running the main `tui` application, use the following shortcuts:
 | `j` / `k` | Alternative navigation (Vim-style). |
 | `enter` | Select a skill to view details or trigger its primary action. |
 | `tab` | Switch focus between the Skill List and the Preview/Log panel. |
-| `s` | **Sync**: Manually trigger the `skill-sync` workflow (updates `AGENTS.md`). |
+| `s` | **Save to Storage**: Save the highlighted skill to the global skill storage (`~/.skillsync/storage`). |
+| `S` | **Sync**: Manually trigger the `skill-sync` workflow (updates `AGENTS.md`). |
 | `?` | Toggle the Help overlay. |
 | `esc` | Go back or cancel the current operation. |
 | `q` / `ctrl+c` | Exit the application. |
@@ -22,8 +23,27 @@ When running the main `tui` application, use the following shortcuts:
 The `skill-sandbox` tool allows you to test skills in isolation without launching the full TUI.
 
 ### Usage
+
 ```bash
 ./bin/skill-sandbox [flags]
+```
+
+## TUI Installer
+
+When running `synck` in a project that hasn't been initialized, the TUI Installer screen will appear.
+
+### Workflow
+
+1. **Select Providers**: Use `space` or `enter` to toggle the AI providers you want to support (Claude, Gemini, Codex, Copilot, OpenCode).
+2. **Execute Install**: Navigate to the "Install" or "Finish" action and press `enter`.
+3. **Verification**: The installer will generate/sync the following files:
+   - `AGENTS.md`: The main skill registry.
+   - `CLAUDE.md`: Claude-specific instructions.
+   - `codex.md`: Codex/Copilot configuration.
+   - `.github/copilot-instructions.md`: GitHub Copilot specific docs.
+   - `OPENCODE.md`: OpenCode configuration.bash
+./bin/skill-sandbox [flags]
+
 ```
 
 ### Flags
@@ -36,6 +56,3 @@ The `skill-sandbox` tool allows you to test skills in isolation without launchin
 ### Manual Sync
 If you've manually edited a `SKILL.md` file, you can run `./scripts/sync.sh` directly to update the project registry.
 
-### RTK (Rust Token Killer)
-- `rtk init`: Initialize the token saving layer.
-- `rtk save`: Manually trigger context compaction if supported.

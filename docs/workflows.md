@@ -23,8 +23,17 @@ We use `rtk` (Rust Token Killer) to keep our AI context clean and efficient.
 ## Skill Synchronization
 
 Whenever a skill's metadata or instructions are updated:
-1. Run the TUI and press `s`.
+1. Run the TUI and press `S` (uppercase).
 2. This triggers the `skill-sync` skill.
 3. Metadata is extracted from all `SKILL.md` files.
 4. `AGENTS.md` is updated with fresh tables and auto-invoke rules.
 5. The `skills-lock.json` file is updated to track versions and locations.
+
+## Global Skill Storage
+
+Skillsync allows you to save and reuse skills across different projects.
+
+### Workflow
+1. **Save a Skill**: In the TUI list view, highlight a skill and press `s` (lowercase). This saves the skill and its metadata to `~/.skillsync/storage`.
+2. **Sync Storage**: Press `S` while in the Storage screen to synchronize your local project with the global storage.
+3. **Install from Storage**: Navigate to the "Almacenamiento de skills" section in the TUI to browse and install skills previously saved from other projects.

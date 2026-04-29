@@ -77,15 +77,21 @@ func nextInstallerStep(m Model, currentPercent float64) tea.Cmd {
 			return installerProgressMsg{percent: 0.6, task: "Sincronizando configuraciones..."}
 
 		case 0.6:
-			// 3. Sync Configs (Dummy sync)
+			// 3. Sync Configs
 			agentsFile := "AGENTS.md"
 			content, _ := os.ReadFile(agentsFile)
 			if len(content) == 0 {
 				content = []byte("# Agent Skills\n")
+				_ = os.WriteFile(agentsFile, content, 0644)
 			}
 			
 			if m.installerProviders[0] { _ = os.WriteFile("CLAUDE.md", content, 0644) }
 			if m.installerProviders[1] { _ = os.WriteFile("GEMINI.md", content, 0644) }
+			if m.installerProviders[2] { _ = os.WriteFile("codex.md", content, 0644) }
+			if m.installerProviders[3] { 
+				_ = os.MkdirAll(".github", 0755)
+				_ = os.WriteFile(".github/copilot-instructions.md", content, 0644) 
+			}
 			if m.installerProviders[4] { _ = os.WriteFile("OPENCODE.md", content, 0644) }
 
 			if m.installerGlobal {
