@@ -13,7 +13,7 @@ When running the main `tui` application, use the following shortcuts:
 | `enter` | Select a skill to view details or trigger its primary action. |
 | `tab` | Switch focus between the Skill List and the Preview/Log panel. |
 | `s` | **Save to Storage**: Save the highlighted skill to the global skill storage (`~/.skillsync/storage`). |
-| `S` | **Sync**: Manually trigger the `skill-sync` workflow (updates `AGENTS.md`). |
+| `y` | **Sync**: Manually trigger the `skill-sync` workflow (updates `AGENTS.md`). |
 | `?` | Toggle the Help overlay. |
 | `esc` | Go back or cancel the current operation. |
 | `q` / `ctrl+c` | Exit the application. |

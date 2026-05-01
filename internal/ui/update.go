@@ -117,7 +117,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleKeyPress(msg)
 
 	case runner.SyncResult:
+		m.SyncFinished = true
 		m.syncOutput = fmt.Sprintf("Exit: %d\nOutput: %s\nErr: %s", msg.ExitCode, msg.Stdout, msg.Stderr)
+		if msg.ExitCode != 0 {
+			m.SyncFailed = true
+		} else {
+			m.syncOutput = "✅ Sync Successful!\n\n" + m.syncOutput
+			m.Progress.SetPercent(1.0)
+		}
 		return m, nil
 
 	case installerProgressMsg:
@@ -133,9 +140,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case installerFinishedMsg:
 		if msg.err != nil {
 			m.StatusMsg = fmt.Sprintf("Error: %v", msg.err)
-		} else {
-			m.StatusMsg = "Instalación completada con éxito"
+			m.syncOutput = fmt.Sprintf("Error: %v", msg.err)
+			m.SyncFailed = true
+			return m, nil // Stay on ScreenSyncing so user can read error
 		}
+		m.StatusMsg = "Instalación completada con éxito"
 		m.Screen = ScreenHome
 		return m, m.loadSkills()
 
@@ -157,6 +166,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errorMsg:
 		m.err = msg
+		return m, nil
+
+	case syncFinishedMsg:
+		if msg.err != nil {
+			m.StatusMsg = fmt.Sprintf("Error en sincronización: %v", msg.err)
+		} else {
+			m.StatusMsg = "OpenCode synchronization successful"
+		}
 		return m, nil
 	}
 
@@ -197,7 +214,7 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.HomeCursor--
 		}
 	case "down", "j":
-		if m.HomeCursor < 2 {
+		if m.HomeCursor < 3 {
 			m.HomeCursor++
 		}
 	case "enter", " ":
@@ -211,6 +228,9 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.HomeCursor == 2 {
 			m.Screen = ScreenStorage
 			return m, m.loadStoredSkillsCmd()
+		} else if m.HomeCursor == 3 {
+			m.StatusMsg = "Sincronizando con OpenCode..."
+			return m, m.syncOpenCodeCmd()
 		}
 	case "1":
 		m.HomeCursor = 0
@@ -225,10 +245,21 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.HomeCursor = 2
 		m.Screen = ScreenStorage
 		return m, m.loadStoredSkillsCmd()
+	case "4":
+		m.HomeCursor = 3
+		m.StatusMsg = "Sincronizando con OpenCode..."
+		return m, m.syncOpenCodeCmd()
 	case "esc", "q":
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+func (m Model) syncOpenCodeCmd() tea.Cmd {
+	return func() tea.Msg {
+		err := RegisterOpenCodeTools()
+		return syncFinishedMsg{err: err}
+	}
 }
 
 func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -251,9 +282,10 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setupInputs()
 			return m, nil
 		}
-	case "S":
+	case "y":
 		m.PrevScreen = m.Screen
 		m.Screen = ScreenSyncing
+		m.SyncFailed = false
 		return m, m.startSync()
 	case "s":
 		return m, m.saveToStorageCmd()
@@ -333,6 +365,10 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleSyncingKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "esc" {
+		if m.SyncFailed {
+			m.Screen = ScreenHome
+			return m, nil
+		}
 		m.Screen = m.PrevScreen
 		return m, nil
 	}
@@ -390,6 +426,7 @@ func (m Model) handleInstallerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Execute install
 			m.PrevScreen = m.Screen
 			m.Screen = ScreenSyncing
+			m.SyncFailed = false
 			m.syncOutput = "Preparando instalación..."
 			return m, runInstallerCmd(m)
 		}
@@ -470,6 +507,11 @@ func (m *Model) setupInputs() {
 
 func (m Model) startSync() tea.Cmd {
 	return func() tea.Msg {
+		
+		// Ensure core shared library and AGENTS.md exist before syncing
+		_ = installCoreSharedLib()
+		_ = ensureAgentsMD()
+
 		r := runner.NewRunner("./.agents/skills/skill-sync/assets/sync.sh")
 		resChan := r.ExecuteSync(context.Background(), nil)
 		return <-resChan

@@ -3,9 +3,11 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-	"skillsync/tui/internal/types"
+
 	"github.com/charmbracelet/bubbles/list"
+	"skillsync/tui/internal/types"
 )
 
 func TestViewGolden(t *testing.T) {
@@ -74,5 +76,15 @@ func TestViewGolden(t *testing.T) {
 				t.Errorf("output mismatch for screen %v", tt.screen)
 			}
 		})
+	}
+}
+
+func TestHomeView_ContainsSyncOption(t *testing.T) {
+	m := Model{
+		Screen: ScreenHome,
+	}
+	view := m.View()
+	if !strings.Contains(view, "4. Sincronizar con OpenCode") {
+		t.Errorf("home view missing sync option, got:\n%s", view)
 	}
 }

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"skillsync/tui/internal/install"
 )
@@ -52,5 +55,317 @@ func TestCLIFlags(t *testing.T) {
 	}
 	if calledGlobal {
 		t.Error("expected GlobalInstaller NOT to be called when no flags are present")
+	}
+}
+
+func TestNewCLICommands(t *testing.T) {
+	calledTUI := false
+	TUIRunner = func() error {
+		calledTUI = true
+		return nil
+	}
+	calledGlobal := false
+	GlobalInstaller = func() install.Result {
+		calledGlobal = true
+		return install.Result{Success: true}
+	}
+
+	tests := []struct {
+		name     string
+		args     []string
+		wantErr  bool
+		checkFn  func() bool
+		checkMsg string
+	}{
+		{
+			name:    "skill command succeeds",
+			args:    []string{"synck", "skill"},
+			wantErr: false,
+			checkFn: func() bool { return !calledTUI && !calledGlobal },
+			checkMsg: "skill should not trigger TUIRunner or GlobalInstaller",
+		},
+		{
+			name:    "find command succeeds",
+			args:    []string{"synck", "find"},
+			wantErr: false,
+			checkFn: func() bool { return !calledTUI && !calledGlobal },
+			checkMsg: "find should not trigger TUIRunner or GlobalInstaller",
+		},
+		{
+			name:    "fullskills command succeeds",
+			args:    []string{"synck", "fullskills"},
+			wantErr: false,
+			checkFn: func() bool { return !calledTUI && !calledGlobal },
+			checkMsg: "fullskills should not trigger TUIRunner or GlobalInstaller",
+		},
+		{
+			name:    "create alias works like createskill",
+			args:    []string{"synck", "create", "test prompt"},
+			wantErr: false,
+			checkFn: func() bool { return !calledTUI && !calledGlobal },
+			checkMsg: "create should not trigger TUIRunner or GlobalInstaller",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			calledTUI = false
+			calledGlobal = false
+			err := run(tt.args)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("run(%v) error = %v, wantErr %v", tt.args, err, tt.wantErr)
+			}
+			if !tt.checkFn() {
+				t.Error(tt.checkMsg)
+			}
+		})
+	}
+}
+
+func TestFindProjectRoot_MultiProvider(t *testing.T) {
+	tests := []struct {
+		name     string
+		setup    func(tmpDir string) (startDir string, wantRoot string)
+	}{
+		{
+			name: "detects .opencode as root",
+			setup: func(tmpDir string) (string, string) {
+				subdir := filepath.Join(tmpDir, "src", "utils")
+				_ = os.MkdirAll(subdir, 0755)
+				opencodeDir := filepath.Join(tmpDir, ".opencode")
+				_ = os.MkdirAll(opencodeDir, 0755)
+				return subdir, tmpDir
+			},
+		},
+		{
+			name: "detects .qwen as root",
+			setup: func(tmpDir string) (string, string) {
+				subdir := filepath.Join(tmpDir, "src")
+				_ = os.MkdirAll(subdir, 0755)
+				qwenDir := filepath.Join(tmpDir, ".qwen")
+				_ = os.MkdirAll(qwenDir, 0755)
+				return subdir, tmpDir
+			},
+		},
+		{
+			name: "detects .claude as root",
+			setup: func(tmpDir string) (string, string) {
+				subdir := filepath.Join(tmpDir, "lib")
+				_ = os.MkdirAll(subdir, 0755)
+				claudeDir := filepath.Join(tmpDir, ".claude")
+				_ = os.MkdirAll(claudeDir, 0755)
+				return subdir, tmpDir
+			},
+		},
+		{
+			name: "detects AGENTS.md as root",
+			setup: func(tmpDir string) (string, string) {
+				subdir := filepath.Join(tmpDir, "docs")
+				_ = os.MkdirAll(subdir, 0755)
+				_ = os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte("# Agents"), 0644)
+				return subdir, tmpDir
+			},
+		},
+		{
+			name: "detects OPENCODE.md as root",
+			setup: func(tmpDir string) (string, string) {
+				subdir := filepath.Join(tmpDir, "config")
+				_ = os.MkdirAll(subdir, 0755)
+				_ = os.WriteFile(filepath.Join(tmpDir, "OPENCODE.md"), []byte("# OpenCode"), 0644)
+				return subdir, tmpDir
+			},
+		},
+		{
+			name: "finds closest root",
+			setup: func(tmpDir string) (string, string) {
+				// .agents at tmpDir, .opencode in nested/deep — closest is nested/deep
+				subdir := filepath.Join(tmpDir, "nested", "deep")
+				_ = os.MkdirAll(subdir, 0755)
+				_ = os.MkdirAll(filepath.Join(tmpDir, ".agents"), 0755)
+				_ = os.MkdirAll(filepath.Join(subdir, ".opencode"), 0755)
+				return subdir, subdir // closest root is in subdir itself
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			startDir, wantRoot := tt.setup(tmpDir)
+			got := findProjectRoot(startDir)
+			if got != wantRoot {
+				t.Errorf("findProjectRoot(%q) = %q, want %q", startDir, got, wantRoot)
+			}
+		})
+	}
+}
+
+func TestVersionCommand(t *testing.T) {
+	// Capture stdout
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }()
+
+	// Mock TUI runner to avoid launching TUI
+	TUIRunner = func() error { return nil }
+	GlobalInstaller = func() install.Result { return install.Result{Success: true} }
+
+	err := run([]string{"synck", "version"})
+	if err != nil {
+		t.Fatalf("run(synck version) failed: %v", err)
+	}
+
+	// Restore stdout and read
+	w.Close()
+	var buf [1024]byte
+	n, _ := r.Read(buf[:])
+	output := string(buf[:n])
+
+	// Version output must contain "version" keyword and version number
+	if !strings.Contains(output, "version") {
+		t.Errorf("version output must contain 'version', got: %s", output)
+	}
+	if !strings.Contains(output, "0.") && !strings.Contains(output, "1.") {
+		t.Errorf("version output must contain version number, got: %s", output)
+	}
+}
+
+func TestSetupOpenCodeCommand_CreatesFiles(t *testing.T) {
+	// Test that `synck setup-opencode` creates .opencode/package.json with tools
+	// and .opencode/agents/skill-manager.md
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	// Ensure .opencode dir exists
+	_ = os.MkdirAll(".opencode", 0755)
+
+	TUIRunner = func() error { return nil }
+	GlobalInstaller = func() install.Result { return install.Result{Success: true} }
+
+	err := run([]string{"synck", "setup-opencode"})
+	if err != nil {
+		t.Fatalf("run(synck setup-opencode) failed: %v", err)
+	}
+
+	// Verify .opencode/commands has base command markdown files
+	for _, tool := range []string{"skill", "find", "create", "sync", "fullskills"} {
+		cmdPath := filepath.Join(".opencode", "commands", tool+".md")
+		if _, err := os.Stat(cmdPath); os.IsNotExist(err) {
+			t.Errorf("missing command file %q", cmdPath)
+		}
+	}
+
+	// Verify .opencode/package.json exists and has empty tools
+	pkgPath := ".opencode/package.json"
+	content, _ := os.ReadFile(pkgPath)
+	if strings.Contains(string(content), `"name": "skill"`) {
+		t.Errorf("tool 'skill' should not be in package.json tools array")
+	}
+
+	// Verify .opencode/agents/skill-manager.md exists
+	agentPath := ".opencode/agents/skill-manager.md"
+	if _, err := os.Stat(agentPath); os.IsNotExist(err) {
+		t.Errorf("expected skill-manager.md to exist after setup-opencode")
+	}
+}
+
+// ----------------------------------------------------------------
+// TestMain_SyncOpencodeFlags — Task 1.13
+// ----------------------------------------------------------------
+
+func TestMain_SyncOpencodeFlags(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	TUIRunner = func() error { return nil }
+	GlobalInstaller = func() install.Result { return install.Result{Success: true} }
+
+	// Create a minimal .agents directory and AGENTS.md so findProjectRoot and copyAgentsMD work
+	_ = os.MkdirAll(".agents", 0755)
+	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n"), 0644)
+
+	// Create a skill in .agents/skills so there's something to mirror
+	_ = os.MkdirAll(".agents/skills/foo", 0755)
+	_ = os.WriteFile(".agents/skills/foo/SKILL.md", []byte("name: foo\n"), 0644)
+
+	// Test --prune flag
+	err := run([]string{"synck", "sync-opencode", "--prune"})
+	if err != nil {
+		t.Fatalf("run(synck sync-opencode --prune) failed: %v", err)
+	}
+
+	// Verify .opencode/skills directory was created (skill was mirrored)
+	skillsPath := ".opencode/skills"
+	if _, err := os.Stat(skillsPath); os.IsNotExist(err) {
+		t.Errorf("expected .opencode/skills to exist after sync-opencode --prune")
+	}
+
+	// Verify the skill was mirrored
+	if _, err := os.Stat(".opencode/skills/foo/SKILL.md"); os.IsNotExist(err) {
+		t.Errorf("expected .opencode/skills/foo/SKILL.md to exist after mirroring")
+	}
+
+	// Test --dry-run flag - remove .opencode first
+	_ = os.RemoveAll(".opencode")
+
+	err = run([]string{"synck", "sync-opencode", "--dry-run"})
+	if err != nil {
+		t.Fatalf("run(synck sync-opencode --dry-run) failed: %v", err)
+	}
+
+	// Verify .opencode was NOT created (dry-run)
+	if _, err := os.Stat(".opencode"); !os.IsNotExist(err) {
+		t.Errorf("dry-run should not create .opencode directory")
+	}
+
+	// Test combined flags - recreate .opencode
+	_ = os.MkdirAll(".opencode", 0755)
+	err = run([]string{"synck", "sync-opencode", "--prune", "--dry-run"})
+	if err != nil {
+		t.Fatalf("run(synck sync-opencode --prune --dry-run) failed: %v", err)
+	}
+}
+
+// ----------------------------------------------------------------
+// TestMain_AutoChain — Task 1.14
+// ----------------------------------------------------------------
+
+func TestMain_AutoChain(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	TUIRunner = func() error { return nil }
+	GlobalInstaller = func() install.Result { return install.Result{Success: true} }
+
+	// Create .agents directory so findProjectRoot works
+	_ = os.MkdirAll(".agents", 0755)
+	// Create AGENTS.md so copyAgentsMD works
+	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n"), 0644)
+
+	// Create the sync script at the correct path (.agents/skills/skill-sync/assets/sync.sh)
+	// This is where runner.DefaultSyncPath points to
+	_ = os.MkdirAll(".agents/skills/skill-sync/assets", 0755)
+	syncScript := `#!/bin/bash
+echo "sync done"
+exit 0
+`
+	_ = os.WriteFile(".agents/skills/skill-sync/assets/sync.sh", []byte(syncScript), 0755)
+
+	// Run sync (which should auto-chain sync-opencode)
+	err := run([]string{"synck", "sync"})
+	if err != nil {
+		t.Fatalf("run(synck sync) failed: %v", err)
+	}
+
+	// Verify sync-opencode was chained (OPENCODE.md should exist)
+	if _, err := os.Stat("OPENCODE.md"); os.IsNotExist(err) {
+		t.Errorf("expected OPENCODE.md to exist after sync auto-chained sync-opencode")
 	}
 }

@@ -1,8 +1,11 @@
 package ui
 
 import (
-	"github.com/charmbracelet/bubbles/list"
+	"fmt"
+	"strings"
 	"testing"
+
+	"github.com/charmbracelet/bubbles/list"
 	"skillsync/tui/internal/types"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -36,8 +39,8 @@ func TestSelectionSync(t *testing.T) {
 			m.Width = 100
 			m.Height = 50
 
-			s1 := types.Skill{ID: "1", Name: "Skill 1", RawBody: "Body 1"}
-			s2 := types.Skill{ID: "2", Name: "Skill 2", RawBody: "Body 2"}
+			s1 := types.Skill{ID: "1", Name: "S", RawBody: "Body 1"}
+			s2 := types.Skill{ID: "2", Name: "S", RawBody: "Body 2"}
 			m.list.SetItems([]list.Item{item{skill: s1}, item{skill: s2}})
 			m.viewport.Height = 10
 			m.viewport.Width = 30
@@ -69,6 +72,24 @@ func TestSelectionSync(t *testing.T) {
 	}
 }
 
+func TestHandleHomeKeys_Key4_TriggersSync(t *testing.T) {
+	m := Model{Screen: ScreenHome}
+	newModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	m = newModel.(Model)
+	if cmd == nil {
+		t.Fatal("expected command, got nil")
+	}
+	// We'll define syncOpenCodeCmd later, but for now we expect SOME command
+}
+
+func TestHandleHomeKeys_Cursor3_Enter_TriggersSync(t *testing.T) {
+	m := Model{Screen: ScreenHome, HomeCursor: 3}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected command, got nil")
+	}
+}
+
 func TestScreenTransitions(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -89,9 +110,9 @@ func TestScreenTransitions(t *testing.T) {
 			expectScreen: ScreenDetail,
 		},
 		{
-			name:         "list to syncing on S",
+			name:         "list to syncing on y",
 			startScreen:  ScreenList,
-			msg:          tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("S")},
+			msg:          tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")},
 			expectScreen: ScreenSyncing,
 		},
 		{
@@ -159,7 +180,7 @@ func TestResizeMarkdownReflow(t *testing.T) {
 	m.Width = 100
 	m.Height = 50
 	
-	s1 := types.Skill{Name: "Skill 1", RawBody: "# Long Markdown\nThis is a long sentence that should wrap differently at different widths."}
+	s1 := types.Skill{Name: "S", RawBody: "# Long Markdown\nThis is a long sentence that should wrap differently at different widths."}
 	m.list.SetItems([]list.Item{item{skill: s1}})
 	m.updatePreview()
 
@@ -186,7 +207,7 @@ func TestViewportScrollInList(t *testing.T) {
 	m.Width = 100
 	m.Height = 20
 	
-	s1 := types.Skill{Name: "Skill 1", RawBody: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10"}
+	s1 := types.Skill{Name: "S", RawBody: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10"}
 	m.list.SetItems([]list.Item{item{skill: s1}})
 	m.updatePreview()
 	m.viewport.Height = 3 // Small viewport to force scroll
@@ -262,8 +283,8 @@ func TestHandleListKeys_Matrix(t *testing.T) {
 			expectScreen: ScreenDetail,
 		},
 		{
-			name:         "S goes to Syncing (ScreenSyncing)",
-			key:          "S",
+			name:         "y goes to Syncing (ScreenSyncing)",
+			key:          "y",
 			expectScreen: ScreenSyncing,
 		},
 		{
@@ -277,7 +298,7 @@ func TestHandleListKeys_Matrix(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m := NewModel()
 			m.Screen = ScreenList
-			s1 := types.Skill{Name: "Skill 1", RawBody: "Body 1"}
+			s1 := types.Skill{Name: "S", RawBody: "Body 1"}
 			m.list.SetItems([]list.Item{item{skill: s1}})
 
 			msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tt.key)}
@@ -355,5 +376,33 @@ func TestHandleDetailKeys_ReadOnly(t *testing.T) {
 				t.Errorf("expected no command, got %v", cmd)
 			}
 		})
+	}
+}
+
+func TestInstallFailurePath(t *testing.T) {
+	m := NewModel()
+	m.Screen = ScreenSyncing
+	m.syncOutput = "Running..."
+
+	// Simulate failure
+	errMsg := fmt.Errorf("failed for test")
+	newModel, cmd := m.Update(installerFinishedMsg{err: errMsg})
+	m = newModel.(Model)
+
+	if m.Screen != ScreenSyncing {
+		t.Errorf("expected ScreenSyncing on error, got %v", m.Screen)
+	}
+	if !strings.Contains(m.syncOutput, "Error: failed for test") {
+		t.Errorf("expected syncOutput to contain error message, got %q", m.syncOutput)
+	}
+	if cmd != nil {
+		t.Errorf("expected nil cmd on error, got %v", cmd)
+	}
+
+	// Test back navigation from error
+	res, _ := m.handleSyncingKeys(tea.KeyMsg{Type: tea.KeyEsc})
+	m = res.(Model)
+	if m.Screen != ScreenHome {
+		t.Errorf("expected navigation to ScreenHome on esc from error, got %v", m.Screen)
 	}
 }

@@ -29,8 +29,8 @@ Common issues and how to solve them.
 
 ## Skill Save/Sync Fails
 
-- **Cause**: No skill is highlighted before pressing `s`, or there are network/permission issues during `S` (Sync).
-- **Solution**: Ensure the skill you want to save is highlighted in the list before pressing `s`. For Sync (`S`), verify your internet connection and project write permissions.
+- **Cause**: No skill is highlighted before pressing `s`, or there are network/permission issues during `y` (Sync).
+- **Solution**: Ensure the skill you want to save is highlighted in the list before pressing `s`. For Sync (`y`), verify your internet connection and project write permissions.
 
 ## Missing Generated Files
 

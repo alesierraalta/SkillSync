@@ -14,6 +14,7 @@ Thank you for your interest in improving Skillsync TUI!
 If you have made local changes and want to test the full installation and skill ecosystem:
 
 1. **Launch the TUI**: Run `go run ./cmd/synck`.
+2. **Install Globally**: Run `go install ./cmd/synck` to update your global `synck` command with your local changes.
 2. **Initialize Project**: If the project isn't initialized, the **Installer** screen will launch.
 3. **Select Providers**: Toggle your desired AI providers (e.g., Claude, Gemini).
 4. **Execute Install**: Trigger the installation action.

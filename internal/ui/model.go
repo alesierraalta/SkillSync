@@ -17,6 +17,10 @@ import (
 
 type Screen int
 
+type syncFinishedMsg struct {
+	err error
+}
+
 const (
 	ScreenHome Screen = iota
 	ScreenList
@@ -44,6 +48,8 @@ type Model struct {
 	HomeCursor     int
 	StatusMsg      string
 	Progress       progress.Model
+	SyncFailed     bool
+	SyncFinished   bool
 
 	// Installer State
 	installerCursor    int
@@ -139,7 +145,7 @@ func (m Model) GetKeyBindings() []KeyBinding {
 			{Key: "enter", Help: "preview"},
 			{Key: "e", Help: "edit skill"},
 			{Key: "s", Help: "save globally"},
-			{Key: "S", Help: "sync"},
+			{Key: "y", Help: "sync"},
 		}
 	case ScreenDetail:
 		return []KeyBinding{
@@ -173,7 +179,7 @@ func (m Model) GetKeyBindings() []KeyBinding {
 }
 
 func (m Model) Init() tea.Cmd {
-	return m.loadSkills()
+	return tea.Batch(m.loadSkills(), instantiateEcosystemCmd())
 }
 
 func (m *Model) initRenderer() error {

@@ -8,6 +8,7 @@ This document lists the AI skills available in the TUI project.
 | ----- | ----------- | -------- |
 | `find-skills` | Helps find and install skills | [.agents/skills/find-skills/SKILL.md](.agents/skills/find-skills/SKILL.md) |
 | `gentleman-bubbletea` | Bubbletea TUI patterns | [.agents/skills/gentleman-bubbletea/SKILL.md](.agents/skills/gentleman-bubbletea/SKILL.md) |
+| `git-github-branches` | Git/GitHub branch development guidelines | [.agents/skills/git-github-branches/SKILL.md](.agents/skills/git-github-branches/SKILL.md) |
 | `skill-creator` | Creates new agent skills | [.agents/skills/skill-creator/SKILL.md](.agents/skills/skill-creator/SKILL.md) |
 | `skill-sync` | Syncs skill metadata | [.agents/skills/skill-sync/SKILL.md](.agents/skills/skill-sync/SKILL.md) |
 
@@ -16,11 +17,16 @@ This document lists the AI skills available in the TUI project.
 When performing these actions, ALWAYS invoke the corresponding skill FIRST:
 
 | Action | Skill |
-| ------ | ----- |
+|--------|-------|
+| -- | `find-skills` |
+| -- | `git-github-branches` |
 | After creating/modifying a skill | `skill-sync` |
+| Branch-based development | `git-github-branches` |
+| Conventional commits | `git-github-branches` |
 | Creating new skills | `skill-creator` |
+| GitHub PR preparation | `git-github-branches` |
 | Regenerate AGENTS.md Auto-invoke tables (sync.sh) | `skill-sync` |
 | Searching for or installing new agent skills | `find-skills` |
 | Troubleshoot why a skill is missing from AGENTS.md auto-invoke | `skill-sync` |
 | Working on TUI screens or adding new UI features in Go | `gentleman-bubbletea` |
-
+| Working with Git branches | `git-github-branches` |

@@ -18,6 +18,8 @@ When performing these actions, ALWAYS invoke the corresponding skill FIRST:
 
 | Action | Skill |
 |--------|-------|
+| -- | `find-skills` |
+| -- | `git-github-branches` |
 | After creating/modifying a skill | `skill-sync` |
 | Branch-based development | `git-github-branches` |
 | Conventional commits | `git-github-branches` |

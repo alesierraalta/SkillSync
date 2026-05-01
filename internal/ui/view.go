@@ -58,8 +58,11 @@ func (m Model) View() string {
 
 
 
-	return content + "\n" + m.renderFooter()
+	if m.Screen == ScreenSyncing {
+		return content
+	}
 
+	return content + "\n" + m.renderFooter()
 }
 
 
@@ -95,13 +98,10 @@ func (m Model) homeView() string {
 
 
 	opts := []string{
-
 		"1. Instanciar ecosistema",
-
 		"2. Gestionar skills",
-
 		"3. Almacenamiento de skills",
-
+		"4. Sincronizar con OpenCode",
 	}
 
 
@@ -201,27 +201,28 @@ func (m Model) detailView() string {
 
 
 func (m Model) syncingView() string {
+	titleText := "Installing Ecosistema..."
+	if m.PrevScreen == ScreenList || m.PrevScreen == ScreenContentView {
+		titleText = "Syncing Skills..."
+	}
+	title := titleStyle.Render(titleText)
 
-	title := titleStyle.Render("Installing Ecosistema...")
-
-	
-
-	currentTask := lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Render(m.syncOutput)
-
-	
+	outputStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	if m.SyncFailed {
+		outputStyle = errorStyle
+	}
+	currentTask := outputStyle.Render(m.syncOutput)
 
 	s := title + "\n\n"
-
 	s += currentTask + "\n\n"
 
-	s += m.Progress.View() + "\n\n"
-
-	s += footerStyle.Render("esc: back")
-
-	
+	if m.SyncFailed || m.SyncFinished {
+		s += "  esc: back"
+	} else {
+		s += m.Progress.View()
+	}
 
 	return s
-
 }
 
 
