@@ -1,11 +1,15 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"skillsync/tui/internal/diff"
 	"skillsync/tui/internal/install"
+	"skillsync/tui/internal/runner"
 )
 
 func TestCLIFlags(t *testing.T) {
@@ -367,5 +371,243 @@ exit 0
 	// Verify sync-opencode was chained (OPENCODE.md should exist)
 	if _, err := os.Stat("OPENCODE.md"); os.IsNotExist(err) {
 		t.Errorf("expected OPENCODE.md to exist after sync auto-chained sync-opencode")
+	}
+}
+
+// ----------------------------------------------------------------
+// renderReport tests — PR3 TDD
+// ----------------------------------------------------------------
+
+func TestRenderReport_NoChanges(t *testing.T) {
+	report := &runner.SyncReport{}
+	got := renderReport(report, false)
+	want := "No files changed.\n"
+	if got != want {
+		t.Errorf("renderReport(no changes) = %q, want %q", got, want)
+	}
+}
+
+func TestRenderReport_Modified(t *testing.T) {
+	before := "line1\nline2\n"
+	after := "line1\nline2modified\n"
+	diffStr, summary := diff.UnifiedDiff(before, after, 50)
+	report := &runner.SyncReport{
+		Changes: []runner.FileChange{
+			{Path: "AGENTS.md", Status: "modified", Before: before, After: after, Diff: diffStr, Summary: summary},
+		},
+	}
+	got := renderReport(report, false)
+	if !strings.Contains(got, "AGENTS.md (modified)") {
+		t.Errorf("expected status line in output, got:\n%s", got)
+	}
+	if !strings.Contains(got, summary) {
+		t.Errorf("expected summary %q in output, got:\n%s", summary, got)
+	}
+	if !strings.Contains(got, "@@") {
+		t.Errorf("expected diff hunk in output, got:\n%s", got)
+	}
+}
+
+func TestRenderReport_CreatedAndDeleted(t *testing.T) {
+	newDiff, newSummary := diff.UnifiedDiff("", "new content\n", 50)
+	delDiff, delSummary := diff.UnifiedDiff("old content\n", "", 50)
+	report := &runner.SyncReport{
+		Changes: []runner.FileChange{
+			{Path: "new.md", Status: "created", Before: "", After: "new content\n", Diff: newDiff, Summary: newSummary},
+			{Path: "old.md", Status: "deleted", Before: "old content\n", After: "", Diff: delDiff, Summary: delSummary},
+			{Path: "link.md", Status: "symlinked", Before: "", After: "", Diff: "", Summary: ""},
+		},
+	}
+	got := renderReport(report, false)
+	if !strings.Contains(got, "new.md (created)") {
+		t.Errorf("expected new.md created, got:\n%s", got)
+	}
+	if !strings.Contains(got, "old.md (deleted)") {
+		t.Errorf("expected old.md deleted, got:\n%s", got)
+	}
+	if !strings.Contains(got, "link.md (symlinked)") {
+		t.Errorf("expected link.md symlinked, got:\n%s", got)
+	}
+}
+
+func TestRenderReport_VerboseFullDiff(t *testing.T) {
+	var beforeLines, afterLines []string
+	for i := 0; i < 30; i++ {
+		beforeLines = append(beforeLines, fmt.Sprintf("line %d", i))
+		afterLines = append(afterLines, fmt.Sprintf("line %d", i))
+	}
+	for i := 30; i < 80; i++ {
+		afterLines = append(afterLines, fmt.Sprintf("new line %d", i))
+	}
+	before := strings.Join(beforeLines, "\n")
+	after := strings.Join(afterLines, "\n")
+
+	cappedDiff, summary := diff.UnifiedDiff(before, after, 50)
+	report := &runner.SyncReport{
+		Changes: []runner.FileChange{
+			{Path: "big.md", Status: "modified", Before: before, After: after, Diff: cappedDiff, Summary: summary},
+		},
+	}
+
+	capped := renderReport(report, false)
+	verbose := renderReport(report, true)
+
+	// Verbose should contain more diff lines than capped
+	cappedLines := strings.Count(capped, "\n")
+	verboseLines := strings.Count(verbose, "\n")
+	if verboseLines <= cappedLines {
+		t.Errorf("expected verbose (%d lines) > capped (%d lines)", verboseLines, cappedLines)
+	}
+}
+
+// ----------------------------------------------------------------
+// handleSync integration tests — PR3
+// ----------------------------------------------------------------
+
+func TestHandleSync_ProgressAndReport(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	// Set up minimal project
+	_ = os.MkdirAll(".agents/skills/foo", 0755)
+	_ = os.WriteFile(".agents/skills/foo/SKILL.md", []byte("name: foo\ndescription: Foo skill\nauto_invoke: true\n"), 0644)
+	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n\n### Auto-invoke Skills\n\nWhen performing these actions, ALWAYS invoke the corresponding skill FIRST:\n\n| Action | Skill |\n|--------|-------|\n"), 0644)
+
+	// Capture stdout concurrently to avoid pipe buffer deadlock
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	var buf strings.Builder
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		close(done)
+	}()
+
+	err := handleSync(nil)
+
+	w.Close()
+	<-done
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("handleSync failed: %v", err)
+	}
+
+	output := buf.String()
+
+	// Must contain progress lines for all 8 stages
+	for i := 1; i <= 8; i++ {
+		if !strings.Contains(output, fmt.Sprintf("→ [%d/8]", i)) {
+			t.Errorf("missing progress line for stage %d in output:\n%s", i, output)
+		}
+	}
+
+	// Must contain completion message
+	if !strings.Contains(output, "Synchronization complete.") {
+		t.Errorf("missing completion message in output:\n%s", output)
+	}
+
+	// Must contain report header
+	if !strings.Contains(output, "Changed files:") {
+		t.Errorf("missing report header in output:\n%s", output)
+	}
+}
+
+func TestHandleSync_NoChanges(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	// Set up minimal project with no skills
+	_ = os.MkdirAll(".agents", 0755)
+	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n"), 0644)
+
+	// First run to set everything up
+	_ = handleSync(nil)
+
+	// Second run should be idempotent and report no changes
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	var buf strings.Builder
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		close(done)
+	}()
+
+	err := handleSync(nil)
+
+	w.Close()
+	<-done
+	os.Stdout = oldStdout
+
+	if err != nil {
+		t.Fatalf("handleSync failed: %v", err)
+	}
+
+	output := buf.String()
+
+	if !strings.Contains(output, "No files changed.") {
+		t.Errorf("expected 'No files changed.' in output:\n%s", output)
+	}
+}
+
+func TestHandleSync_VerboseFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	// Set up project with a skill that produces a large diff
+	_ = os.MkdirAll(".agents/skills/foo", 0755)
+	_ = os.WriteFile(".agents/skills/foo/SKILL.md", []byte("name: foo\ndescription: Foo skill\nauto_invoke: true\n"), 0644)
+
+	// Create AGENTS.md with auto-invoke section so it gets modified
+	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n\n### Auto-invoke Skills\n\nWhen performing these actions, ALWAYS invoke the corresponding skill FIRST:\n\n| Action | Skill |\n|--------|-------|\n"), 0644)
+
+	// Capture stdout (non-verbose) concurrently
+	oldStdout := os.Stdout
+	r1, w1, _ := os.Pipe()
+	os.Stdout = w1
+	var buf1 strings.Builder
+	done1 := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&buf1, r1)
+		close(done1)
+	}()
+	_ = handleSync(nil)
+	w1.Close()
+	<-done1
+	os.Stdout = oldStdout
+	cappedOutput := buf1.String()
+
+	// Capture stdout (verbose) concurrently
+	r2, w2, _ := os.Pipe()
+	os.Stdout = w2
+	var buf2 strings.Builder
+	done2 := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(&buf2, r2)
+		close(done2)
+	}()
+	_ = handleSync([]string{"--verbose"})
+	w2.Close()
+	<-done2
+	os.Stdout = oldStdout
+	verboseOutput := buf2.String()
+
+	// Both should have progress and completion
+	if !strings.Contains(cappedOutput, "→ [1/8]") {
+		t.Error("capped output missing progress line")
+	}
+	if !strings.Contains(verboseOutput, "→ [1/8]") {
+		t.Error("verbose output missing progress line")
 	}
 }

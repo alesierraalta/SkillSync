@@ -1,0 +1,38 @@
+# Spec: fix-skill-preview-selection
+
+## Domain: Parser
+
+### Requirement: Unique Skill ID Population
+The parser MUST populate the `Skill.ID` field using the file path of the skill's source file. This ID MUST be unique across all loaded skills.
+
+#### Scenario: Parse local skill
+- GIVEN a skill at `.agents/skills/my-skill/SKILL.md`
+- WHEN `parser.Parse` is called with this path
+- THEN the returned `Skill` MUST have `ID` set to the path
+- AND the `Name` MUST remain `my-skill`
+
+## Domain: UI
+
+### Requirement: Selection Tracking via ID
+The TUI MUST use `Skill.ID` for tracking `lastSelectedID` and detecting selection changes.
+
+#### Scenario: Update preview on selection change
+- GIVEN the TUI is in `ScreenList`
+- AND `lastSelectedID` is `old-path/SKILL.md`
+- WHEN user navigates to item with ID `new-path/SKILL.md`
+- THEN the system MUST trigger a preview update
+- AND `lastSelectedID` MUST become `new-path/SKILL.md`
+
+#### Scenario: Identical names but different paths
+- GIVEN two skills named `deploy` at different paths
+- WHEN user moves selection between them
+- THEN the system MUST trigger a preview update because their IDs differ
+
+### Requirement: Virtual Skill ID Persistence
+Virtual skills MUST maintain their hardcoded unique IDs.
+
+#### Scenario: Preview virtual agents skill
+- GIVEN the `AGENTS.md` virtual skill is selected
+- WHEN `updatePreview` is called
+- THEN `lastSelectedID` MUST be set to `virtual:agents`
+- AND preview content MUST show `AGENTS.md` content

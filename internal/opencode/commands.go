@@ -5,17 +5,21 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"skillsync/tui/internal/diff"
+	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/types"
 )
 
 const ManagedMarker = "managed_by: skillsync"
 
 // RegenerateCommands generates OpenCode slash command markdown files
-func RegenerateCommands(root string, skills []types.Skill, dryRun bool) error {
+func RegenerateCommands(root string, skills []types.Skill, dryRun bool) (*runner.SyncReport, error) {
+	report := &runner.SyncReport{}
 	cmdDir := filepath.Join(root, ".opencode", "commands")
 	if !dryRun {
 		if err := os.MkdirAll(cmdDir, 0755); err != nil {
-			return fmt.Errorf("mkdir commands: %w", err)
+			return report, fmt.Errorf("mkdir commands: %w", err)
 		}
 	}
 
@@ -37,8 +41,10 @@ func RegenerateCommands(root string, skills []types.Skill, dryRun bool) error {
 		filename := bc.name + ".md"
 		content := fmt.Sprintf("---\nmanaged_by: skillsync\ndescription: %s\n---\n\n/synck %s \"$!1\"\n", bc.desc, bc.name)
 		managedFiles[filename] = true
-		if err := writeIfManaged(filepath.Join(cmdDir, filename), content, dryRun); err != nil {
-			return err
+		if change, err := writeIfManaged(filepath.Join(cmdDir, filename), content, dryRun, root); err != nil {
+			return report, err
+		} else if change != nil {
+			report.Changes = append(report.Changes, *change)
 		}
 	}
 
@@ -50,8 +56,10 @@ func RegenerateCommands(root string, skills []types.Skill, dryRun bool) error {
 		filename := s.Name + ".md"
 		content := fmt.Sprintf("---\nmanaged_by: skillsync\ndescription: %s\n---\n\n/synck %s \"$!1\"\n", s.Metadata.Description, s.Name)
 		managedFiles[filename] = true
-		if err := writeIfManaged(filepath.Join(cmdDir, filename), content, dryRun); err != nil {
-			return err
+		if change, err := writeIfManaged(filepath.Join(cmdDir, filename), content, dryRun, root); err != nil {
+			return report, err
+		} else if change != nil {
+			report.Changes = append(report.Changes, *change)
 		}
 	}
 
@@ -59,9 +67,9 @@ func RegenerateCommands(root string, skills []types.Skill, dryRun bool) error {
 	entries, err := os.ReadDir(cmdDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return report, nil
 		}
-		return fmt.Errorf("read commands dir: %w", err)
+		return report, fmt.Errorf("read commands dir: %w", err)
 	}
 
 	for _, entry := range entries {
@@ -80,42 +88,107 @@ func RegenerateCommands(root string, skills []types.Skill, dryRun bool) error {
 		}
 
 		if isManaged {
+			relPath, _ := filepath.Rel(root, path)
+			before := ""
+			if content, err := os.ReadFile(path); err == nil {
+				before = string(content)
+			}
 			if dryRun {
+				report.Changes = append(report.Changes, runner.FileChange{
+					Path:   relPath,
+					Status: "deleted",
+					Before: before,
+					After:  "",
+				})
 				fmt.Printf("[dry-run] would prune orphan command: %s\n", filename)
 			} else {
 				if err := os.Remove(path); err != nil {
-					return fmt.Errorf("remove orphan %s: %w", filename, err)
+					return report, fmt.Errorf("remove orphan %s: %w", filename, err)
 				}
+				diffStr, summary := diff.UnifiedDiff(before, "", 50)
+				report.Changes = append(report.Changes, runner.FileChange{
+					Path:    relPath,
+					Status:  "deleted",
+					Before:  before,
+					After:   "",
+					Diff:    diffStr,
+					Summary: summary,
+				})
 			}
 		}
 	}
 
-	return nil
+	return report, nil
 }
 
-func writeIfManaged(path string, content string, dryRun bool) error {
+func writeIfManaged(path string, content string, dryRun bool, root string) (*runner.FileChange, error) {
+	relPath, _ := filepath.Rel(root, path)
+
 	if _, err := os.Stat(path); err == nil {
 		managed, err := isManagedBySkillSync(path)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if !managed {
-			return nil // Don't touch user files
+			return nil, nil // Don't touch user files
 		}
 
 		// Read current content to avoid unnecessary writes
 		current, _ := os.ReadFile(path)
 		if string(current) == content {
-			return nil
+			return nil, nil
 		}
+
+		before := string(current)
+		if dryRun {
+			diffStr, summary := diff.UnifiedDiff(before, content, 50)
+			return &runner.FileChange{
+				Path:    relPath,
+				Status:  "modified",
+				Before:  before,
+				After:   content,
+				Diff:    diffStr,
+				Summary: summary,
+			}, nil
+		}
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			return nil, err
+		}
+		diffStr, summary := diff.UnifiedDiff(before, content, 50)
+		return &runner.FileChange{
+			Path:    relPath,
+			Status:  "modified",
+			Before:  before,
+			After:   content,
+			Diff:    diffStr,
+			Summary: summary,
+		}, nil
 	}
 
+	// File doesn't exist → created
 	if dryRun {
-		fmt.Printf("[dry-run] would write command: %s\n", path)
-		return nil
+		diffStr, summary := diff.UnifiedDiff("", content, 50)
+		return &runner.FileChange{
+			Path:    relPath,
+			Status:  "created",
+			Before:  "",
+			After:   content,
+			Diff:    diffStr,
+			Summary: summary,
+		}, nil
 	}
-
-	return os.WriteFile(path, []byte(content), 0644)
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return nil, err
+	}
+	diffStr, summary := diff.UnifiedDiff("", content, 50)
+	return &runner.FileChange{
+		Path:    relPath,
+		Status:  "created",
+		Before:  "",
+		After:   content,
+		Diff:    diffStr,
+		Summary: summary,
+	}, nil
 }
 
 func isManagedBySkillSync(path string) (bool, error) {

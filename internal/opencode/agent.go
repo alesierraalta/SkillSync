@@ -6,22 +6,30 @@ import (
 	"path/filepath"
 	"strings"
 
+	"skillsync/tui/internal/diff"
+	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/types"
 )
 
 // RegenerateAgent writes .opencode/agents/skill-manager.md with a table
 // listing all provided skills and their commands.
-func RegenerateAgent(root string, skills []types.Skill, dryRun bool) error {
+func RegenerateAgent(root string, skills []types.Skill, dryRun bool) (*runner.SyncReport, error) {
+	report := &runner.SyncReport{}
 	agentsDir := filepath.Join(root, ".opencode", "agents")
 	agentPath := filepath.Join(agentsDir, "skill-manager.md")
 
 	if dryRun {
 		fmt.Printf("[dry-run] would regenerate skill-manager.md with %d skills\n", len(skills))
-		return nil
+		return report, nil
 	}
 
 	if err := os.MkdirAll(agentsDir, 0755); err != nil {
-		return fmt.Errorf("mkdir %s: %w", agentsDir, err)
+		return report, fmt.Errorf("mkdir %s: %w", agentsDir, err)
+	}
+
+	before := ""
+	if content, err := os.ReadFile(agentPath); err == nil {
+		before = string(content)
 	}
 
 	var b strings.Builder
@@ -75,18 +83,68 @@ func RegenerateAgent(root string, skills []types.Skill, dryRun bool) error {
 	b.WriteString("- Never overwrite existing user agents in .opencode/agents/\n")
 	b.WriteString("- Preserve existing .opencode/package.json configuration\n")
 
-	return os.WriteFile(agentPath, []byte(b.String()), 0644)
+	if err := os.WriteFile(agentPath, []byte(b.String()), 0644); err != nil {
+		return report, err
+	}
+
+	after := b.String()
+	if before != after {
+		diffStr, summary := diff.UnifiedDiff(before, after, 50)
+		status := "modified"
+		if before == "" {
+			status = "created"
+		}
+		relPath, _ := filepath.Rel(root, agentPath)
+		report.Changes = append(report.Changes, runner.FileChange{
+			Path:    relPath,
+			Status:  status,
+			Before:  before,
+			After:   after,
+			Diff:    diffStr,
+			Summary: summary,
+		})
+	}
+
+	return report, nil
 }
 
 // CopyAgentsMD copies AGENTS.md to OPENCODE.md.
-func CopyAgentsMD(root string) error {
+func CopyAgentsMD(root string) (*runner.SyncReport, error) {
+	report := &runner.SyncReport{}
 	src := filepath.Join(root, "AGENTS.md")
 	dst := filepath.Join(root, "OPENCODE.md")
 
 	content, err := os.ReadFile(src)
 	if err != nil {
-		return fmt.Errorf("read AGENTS.md: %w", err)
+		return report, fmt.Errorf("read AGENTS.md: %w", err)
 	}
 
-	return os.WriteFile(dst, content, 0644)
+	before := ""
+	if existing, err := os.ReadFile(dst); err == nil {
+		before = string(existing)
+	}
+
+	if err := os.WriteFile(dst, content, 0644); err != nil {
+		return report, fmt.Errorf("write OPENCODE.md: %w", err)
+	}
+
+	after := string(content)
+	if before != after {
+		diffStr, summary := diff.UnifiedDiff(before, after, 50)
+		status := "modified"
+		if before == "" {
+			status = "created"
+		}
+		relPath, _ := filepath.Rel(root, dst)
+		report.Changes = append(report.Changes, runner.FileChange{
+			Path:    relPath,
+			Status:  status,
+			Before:  before,
+			After:   after,
+			Diff:    diffStr,
+			Summary: summary,
+		})
+	}
+
+	return report, nil
 }

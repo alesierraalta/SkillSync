@@ -38,7 +38,7 @@ func TestSyncSkills_MirrorsFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := SyncSkills(tmp, Options{})
+	_, err := SyncSkills(tmp, Options{})
 	if err != nil {
 		t.Fatalf("SyncSkills failed: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestSyncSkills_SkipsUnchanged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := SyncSkills(tmp, Options{})
+	_, err := SyncSkills(tmp, Options{})
 	if err != nil {
 		t.Fatalf("first SyncSkills failed: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestSyncSkills_SkipsUnchanged(t *testing.T) {
 	}
 	mtime1 := stat1.ModTime()
 
-	err = SyncSkills(tmp, Options{})
+	_, err = SyncSkills(tmp, Options{})
 	if err != nil {
 		t.Fatalf("second SyncSkills failed: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestSyncSkills_PreservesSymlink(t *testing.T) {
 		t.Skipf("symlink creation failed (may need admin on Windows): %v", err)
 	}
 
-	err := SyncSkills(tmp, Options{})
+	_, err := SyncSkills(tmp, Options{})
 	if err != nil {
 		t.Fatalf("SyncSkills failed: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestSyncSkills_CreatesMissingDir(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := SyncSkills(tmp, Options{})
+	_, err := SyncSkills(tmp, Options{})
 	if err != nil {
 		t.Fatalf("SyncSkills failed: %v", err)
 	}
@@ -214,7 +214,7 @@ func TestSyncSkills_PruneRemovesOrphans(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := SyncSkills(tmp, Options{})
+	_, err := SyncSkills(tmp, Options{})
 	if err != nil {
 		t.Fatalf("SyncSkills without prune failed: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestSyncSkills_PruneRemovesOrphans(t *testing.T) {
 		t.Error("orphan should NOT be deleted without --prune")
 	}
 
-	err = SyncSkills(tmp, Options{Prune: true})
+	_, err = SyncSkills(tmp, Options{Prune: true})
 	if err != nil {
 		t.Fatalf("SyncSkills with prune failed: %v", err)
 	}
@@ -251,7 +251,7 @@ func TestSyncSkills_DryRunReportsNoWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	SyncSkills(tmp, Options{DryRun: true})
+	_, _ = SyncSkills(tmp, Options{DryRun: true})
 
 	fooDest := filepath.Join(tmp, ".opencode", "skills", "foo", "SKILL.md")
 	if _, err := os.Stat(fooDest); !os.IsNotExist(err) {
@@ -275,7 +275,7 @@ func TestRegenerateTools_GeneratesTools(t *testing.T) {
 		{Name: "baz", Metadata: types.Metadata{AutoInvoke: false, Description: "Baz skill"}},
 	}
 
-	err := RegenerateTools(tmp, skills, false)
+	_, err := RegenerateTools(tmp, skills, false)
 	if err != nil {
 		t.Fatalf("RegenerateTools failed: %v", err)
 	}
@@ -321,7 +321,7 @@ func TestRegenerateTools_PreservesConfig(t *testing.T) {
 		{Name: "foo", Metadata: types.Metadata{AutoInvoke: true}},
 	}
 
-	err := RegenerateTools(tmp, skills, false)
+	_, err := RegenerateTools(tmp, skills, false)
 	if err != nil {
 		t.Fatalf("RegenerateTools failed: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestRegenerateTools_DryRun(t *testing.T) {
 		{Name: "foo", Metadata: types.Metadata{AutoInvoke: true}},
 	}
 
-	err := RegenerateTools(tmp, skills, true)
+	_, err := RegenerateTools(tmp, skills, true)
 	if err != nil {
 		t.Fatalf("RegenerateTools dry-run failed: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestRegenerateAgent_GeneratesMarkdown(t *testing.T) {
 		{Name: "bar", Metadata: types.Metadata{Description: "Bar skill"}},
 	}
 
-	err := RegenerateAgent(tmp, skills, false)
+	_, err := RegenerateAgent(tmp, skills, false)
 	if err != nil {
 		t.Fatalf("RegenerateAgent failed: %v", err)
 	}
@@ -411,7 +411,7 @@ func TestRegenerateAgent_DryRun(t *testing.T) {
 		{Name: "foo", Metadata: types.Metadata{Description: "Foo"}},
 	}
 
-	err := RegenerateAgent(tmp, skills, true)
+	_, err := RegenerateAgent(tmp, skills, true)
 	if err != nil {
 		t.Fatalf("RegenerateAgent dry-run failed: %v", err)
 	}
@@ -435,7 +435,7 @@ func TestCopyAgentsMD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := CopyAgentsMD(tmp)
+	_, err := CopyAgentsMD(tmp)
 	if err != nil {
 		t.Fatalf("CopyAgentsMD failed: %v", err)
 	}
@@ -468,7 +468,7 @@ func TestSyncOpencode_FullSync(t *testing.T) {
 	fooSrc := filepath.Join(fooDir, "SKILL.md")
 	os.WriteFile(fooSrc, []byte("name: foo\ndescription: Foo skill\nauto_invoke: true\n"), 0644)
 
-	err := SyncSkills(tmp, Options{})
+	_, err := SyncSkills(tmp, Options{})
 	if err != nil {
 		t.Fatalf("SyncSkills failed: %v", err)
 	}
@@ -476,15 +476,15 @@ func TestSyncOpencode_FullSync(t *testing.T) {
 	skills := []types.Skill{
 		{Name: "foo", Metadata: types.Metadata{AutoInvoke: true, Description: "Foo skill"}},
 	}
-	err = RegenerateTools(tmp, skills, false)
+	_, err = RegenerateTools(tmp, skills, false)
 	if err != nil {
 		t.Fatalf("RegenerateTools failed: %v", err)
 	}
-	err = RegenerateAgent(tmp, skills, false)
+	_, err = RegenerateAgent(tmp, skills, false)
 	if err != nil {
 		t.Fatalf("RegenerateAgent failed: %v", err)
 	}
-	err = CopyAgentsMD(tmp)
+	_, err = CopyAgentsMD(tmp)
 	if err != nil {
 		t.Fatalf("CopyAgentsMD failed: %v", err)
 	}
@@ -538,10 +538,10 @@ func TestSyncOpencode_Idempotent(t *testing.T) {
 
 	skills := []types.Skill{{Name: "foo", Metadata: types.Metadata{AutoInvoke: true}}}
 
-	SyncSkills(tmp, Options{})
+	_, _ = SyncSkills(tmp, Options{})
 	RegenerateTools(tmp, skills, false)
-	RegenerateAgent(tmp, skills, false)
-	CopyAgentsMD(tmp)
+	_, _ = RegenerateAgent(tmp, skills, false)
+	_, _ = CopyAgentsMD(tmp)
 
 	fooDest := filepath.Join(tmp, ".opencode", "skills", "foo", "SKILL.md")
 	stat1, err := os.Stat(fooDest)
@@ -550,10 +550,10 @@ func TestSyncOpencode_Idempotent(t *testing.T) {
 	}
 	mtime1 := stat1.ModTime()
 
-	SyncSkills(tmp, Options{})
+	_, _ = SyncSkills(tmp, Options{})
 	RegenerateTools(tmp, skills, false)
-	RegenerateAgent(tmp, skills, false)
-	CopyAgentsMD(tmp)
+	_, _ = RegenerateAgent(tmp, skills, false)
+	_, _ = CopyAgentsMD(tmp)
 
 	stat2, err := os.Stat(fooDest)
 	if err != nil {
@@ -583,13 +583,13 @@ func TestSyncOpencode_RemovedSkill(t *testing.T) {
 	fooSrc := filepath.Join(fooDir, "SKILL.md")
 	os.WriteFile(fooSrc, []byte("name: foo\nauto_invoke: true\n"), 0644)
 
-	SyncSkills(tmp, Options{})
+	_, _ = SyncSkills(tmp, Options{})
 	skills := []types.Skill{{Name: "foo", Metadata: types.Metadata{AutoInvoke: true}}}
 	RegenerateTools(tmp, skills, false)
 
 	os.Remove(fooSrc)
 
-	SyncSkills(tmp, Options{})
+	_, _ = SyncSkills(tmp, Options{})
 	RegenerateTools(tmp, []types.Skill{}, false)
 
 	pkgPath := filepath.Join(tmp, ".opencode", "package.json")

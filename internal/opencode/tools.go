@@ -6,14 +6,22 @@ import (
 	"os"
 	"path/filepath"
 
+	"skillsync/tui/internal/diff"
+	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/types"
 )
 
 // RegenerateTools rebuilds .opencode/package.json tools array from the
 // provided skills list. Only skills with auto_invoke=true produce tool entries.
 // It preserves all other package.json fields.
-func RegenerateTools(root string, skills []types.Skill, dryRun bool) error {
+func RegenerateTools(root string, skills []types.Skill, dryRun bool) (*runner.SyncReport, error) {
+	report := &runner.SyncReport{}
 	pkgPath := filepath.Join(root, ".opencode", "package.json")
+
+	before := ""
+	if content, err := os.ReadFile(pkgPath); err == nil {
+		before = string(content)
+	}
 
 	// Read existing package.json
 	data := make(map[string]interface{})
@@ -46,15 +54,37 @@ func RegenerateTools(root string, skills []types.Skill, dryRun bool) error {
 
 	if dryRun {
 		fmt.Printf("[dry-run] would regenerate tools: %d entries\n", len(tools))
-		return nil
+		return report, nil
 	}
 
 	newData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshal package.json: %w", err)
+		return report, fmt.Errorf("marshal package.json: %w", err)
 	}
 
-	return os.WriteFile(pkgPath, newData, 0644)
+	if err := os.WriteFile(pkgPath, newData, 0644); err != nil {
+		return report, err
+	}
+
+	after := string(newData)
+	if before != after {
+		diffStr, summary := diff.UnifiedDiff(before, after, 50)
+		status := "modified"
+		if before == "" {
+			status = "created"
+		}
+		relPath, _ := filepath.Rel(root, pkgPath)
+		report.Changes = append(report.Changes, runner.FileChange{
+			Path:    relPath,
+			Status:  status,
+			Before:  before,
+			After:   after,
+			Diff:    diffStr,
+			Summary: summary,
+		})
+	}
+
+	return report, nil
 }
 
 // EnsurePackageJSON creates a minimal .opencode/package.json if it doesn't exist.

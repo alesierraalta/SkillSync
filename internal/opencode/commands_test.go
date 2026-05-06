@@ -17,7 +17,7 @@ func TestRegenerateCommands_CreatesBaseFiles(t *testing.T) {
 	}
 
 	skills := []types.Skill{}
-	err = RegenerateCommands(tmpDir, skills, false)
+	_, err = RegenerateCommands(tmpDir, skills, false)
 	if err != nil {
 		t.Fatalf("RegenerateCommands failed: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestRegenerateCommands_PreservesUserFiles(t *testing.T) {
 	os.WriteFile(userCmdPath, []byte(userContent), 0644)
 
 	skills := []types.Skill{}
-	err = RegenerateCommands(tmpDir, skills, false)
+	_, err = RegenerateCommands(tmpDir, skills, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestRegenerateCommands_PrunesOrphans(t *testing.T) {
 	os.WriteFile(orphanPath, []byte("---\nmanaged_by: skillsync\n---\n"), 0644)
 
 	skills := []types.Skill{} // No skills, so old-skill.md should be pruned
-	err = RegenerateCommands(tmpDir, skills, false)
+	_, err = RegenerateCommands(tmpDir, skills, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestRegenerateCommands_SkillSpecific(t *testing.T) {
 			},
 		},
 	}
-	err = RegenerateCommands(tmpDir, skills, false)
+	_, err = RegenerateCommands(tmpDir, skills, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestRegenerateCommands_Idempotent(t *testing.T) {
 	skills := []types.Skill{{Name: "test", Metadata: types.Metadata{AutoInvoke: true}}}
 	
 	// First run
-	err := RegenerateCommands(tmpDir, skills, false)
+	_, err := RegenerateCommands(tmpDir, skills, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestRegenerateCommands_Idempotent(t *testing.T) {
 	stat1, _ := os.Stat(path)
 	
 	// Second run
-	err = RegenerateCommands(tmpDir, skills, false)
+	_, err = RegenerateCommands(tmpDir, skills, false)
 	if err != nil {
 		t.Fatal(err)
 	}

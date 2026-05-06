@@ -12,8 +12,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"skillsync/tui/internal/storage"
+	"skillsync/tui/internal/syncengine"
 	"skillsync/tui/internal/types"
 )
+
+// syncEngineSync is the default sync engine function; override in tests.
+var syncEngineSync = func(root string, opts syncengine.SyncOptions) error {
+	_, err := syncengine.Sync(root, opts)
+	return err
+}
 
 type Screen int
 

@@ -1,0 +1,50 @@
+﻿# Proposal: fix-skill-preview-selection
+
+## Intent
+
+Fix wrong preview/content selection caused by duplicate local skills and non-unique selection keys.
+Currently, the TUI uses skill.Name to track the last selected item for preview updates. Since Name is derived from the immediate parent directory, collisions occur when multiple skills share the same directory name (e.g., nested .agents/skills or local overrides). This prevents the preview from updating when moving between two different skills that happen to have the same name.
+
+## Scope
+
+### In Scope
+- Update internal/parser/parser.go to populate Skill.ID with the unique file path.
+- Update internal/ui/model.go to use Skill.ID for lastSelectedID tracking.
+- Update internal/ui/update.go to use Skill.ID for selection change detection.
+- Ensure virtual skills (like AGENTS.md) maintain their unique IDs.
+
+### Out of Scope
+- Deduplicating skills in the list view.
+- Changing how skill names are displayed to the user.
+
+## Approach
+
+Use the Skill.ID field as the primary unique identifier for all internal tracking.
+1. **Populate ID**: Modify parser.Parse to set Skill.ID using the file path.
+2. **Track ID**: Update Model.updatePreview to set lastSelectedID to i.skill.ID.
+3. **Compare ID**: Update the selection change check in internal/ui/update.go to compare i.skill.ID with lastSelectedID.
+
+## Affected Areas
+
+| Area | Impact | Description |
+|------|--------|-------------|
+| internal/parser/parser.go | Modified | Set Skill.ID to path during parsing. |
+| internal/ui/model.go | Modified | Use ID for lastSelectedID in updatePreview. |
+| internal/ui/update.go | Modified | Use ID for selection change detection in handleListKeys. |
+
+## Risks
+
+| Risk | Likelihood | Mitigation |
+|------|------------|------------|
+| Path-based ID instability | Low | Using relative or absolute paths is stable enough for a single session/scan. |
+| Virtual Skill collisions | Low | Virtual IDs (e.g., irtual:agents) are already distinct from filesystem paths. |
+
+## Rollback Plan
+
+Revert the logic in internal/ui and internal/parser to use skill.Name for selection tracking.
+
+## Success Criteria
+
+- [ ] Moving between two skills with the same name correctly triggers a preview update.
+- [ ] The virtual AGENTS.md skill continues to be selectable and previewable.
+- [ ] No regressions in general navigation or list filtering.

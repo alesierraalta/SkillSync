@@ -1,0 +1,72 @@
+# Design: fix-skill-preview-selection
+
+## Technical Approach
+
+The issue stems from using non-unique names (`Skill.Name`) for tracking the currently selected skill in the list view. This prevents the preview from updating when navigating between two different skills that share the same folder name (e.g., `.agents/skills/foo` and `.opencode/skills/foo`).
+
+We will switch to using `Skill.ID` as the unique identifier for all internal selection tracking. `Skill.ID` will be populated with the normalized file path of the `SKILL.md` file, ensuring uniqueness across the entire project structure.
+
+## Architecture Decisions
+
+### Decision: Unique Identifier Source
+
+**Choice**: Filesystem path
+**Alternatives considered**: Content hash, directory name
+**Rationale**: Path is stable, unique, and avoids collision issues. Hash is expensive and doesn't distinguish same content in different locations. Directory name (current choice) leads to collisions.
+
+### Decision: Path Normalization
+
+**Choice**: `filepath.ToSlash(path)`
+**Alternatives considered**: Raw OS path
+**Rationale**: Ensures consistent IDs across Windows/Linux/macOS, making tests and ID tracking platform-independent.
+
+### Decision: Virtual Skill ID Stability
+
+**Choice**: Preserve `virtual:agents`
+**Alternatives considered**: Use real path `AGENTS.md`
+**Rationale**: Preserves existing behavior for the special "AGENTS.md" skill and keeps it distinct from filesystem-based skills that go through the parser.
+
+## Data Flow
+
+1.  `Discovery` finds file paths.
+2.  `Parser` reads file and sets `Skill.ID = filepath.ToSlash(path)`.
+3.  `UI.loadSkills` populates the list with `Skill` items.
+4.  `UI.Update` (handleListKeys) detects movement by comparing `m.list.SelectedItem().ID` with `m.lastSelectedID`.
+5.  If different, `updatePreview` sets `m.lastSelectedID = selected.ID` and refreshes content.
+
+## File Changes
+
+| File | Action | Description |
+|------|--------|-------------|
+| `internal/parser/parser.go` | Modify | In `Parse`, set `Skill.ID` to `filepath.ToSlash(path)`. |
+| `internal/ui/model.go` | Modify | Update `updatePreview` to set `lastSelectedID` to `i.skill.ID`. |
+| `internal/ui/update.go` | Modify | Update `handleListKeys` to compare `i.skill.ID` with `lastSelectedID`. |
+| `internal/ui/update_test.go` | Modify | Update `TestSelectionSync` to populate and verify IDs instead of names. |
+
+## Interfaces / Contracts
+
+No new interfaces. We are utilizing the existing `ID` field in the `Skill` struct.
+
+```go
+// internal/types/types.go
+type Skill struct {
+    ID       string // Will now hold normalized path
+    Name     string
+    // ...
+}
+```
+
+## Testing Strategy
+
+| Layer | What to Test | Approach |
+|-------|-------------|----------|
+| Unit | `Parse` ID population | Verify `ID` is correctly set and normalized to slash in `parser_test.go`. |
+| Integration | `TestSelectionSync` | Ensure `lastSelectedID` updates correctly when moving between items with same names but different IDs. |
+
+## Migration / Rollout
+
+No migration required. This is a purely internal tracking change.
+
+## Open Questions
+
+- None.

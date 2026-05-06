@@ -16,17 +16,5 @@ This document lists the AI skills available in the TUI project.
 
 When performing these actions, ALWAYS invoke the corresponding skill FIRST:
 
-| Action | Skill |
-|--------|-------|
-| -- | `find-skills` |
-| -- | `git-github-branches` |
-| After creating/modifying a skill | `skill-sync` |
-| Branch-based development | `git-github-branches` |
-| Conventional commits | `git-github-branches` |
-| Creating new skills | `skill-creator` |
-| GitHub PR preparation | `git-github-branches` |
-| Regenerate AGENTS.md Auto-invoke tables (sync.sh) | `skill-sync` |
-| Searching for or installing new agent skills | `find-skills` |
-| Troubleshoot why a skill is missing from AGENTS.md auto-invoke | `skill-sync` |
-| Working on TUI screens or adding new UI features in Go | `gentleman-bubbletea` |
-| Working with Git branches | `git-github-branches` |
+| Action                              | Skill      |
+| ----------------------------------- | ---------- |

@@ -1,0 +1,22 @@
+# Tasks: fix-skill-preview-selection
+
+## Phase 1: Foundation / Parser logic
+
+- [ ] 1.1 Update `internal/parser/parser.go`: In `Parse`, set `Skill.ID` to `filepath.ToSlash(path)`.
+- [ ] 1.2 Update `internal/parser/parser_test.go`: Add or update test case to verify `Skill.ID` is correctly populated with the normalized path.
+
+## Phase 2: Core UI Implementation
+
+- [ ] 2.1 Update `internal/ui/model.go`: Modify `updatePreview` method to set `m.lastSelectedID` using `i.skill.ID` instead of `i.skill.Name`.
+- [ ] 2.2 Update `internal/ui/update.go`: In `handleListKeys`, update the selection change detection to compare `i.skill.ID` with `m.lastSelectedID`.
+- [ ] 2.3 Verify `internal/ui/agents.go` (or where virtual skill is defined): Ensure the virtual `AGENTS.md` skill maintains its `virtual:agents` ID.
+
+## Phase 3: Testing & Verification
+
+- [ ] 3.1 Update `internal/ui/update_test.go`: Update `TestSelectionSync` to verify that moving between items with the same name but different IDs triggers a preview update.
+- [ ] 3.2 Manual Verification: Run the TUI and navigate between two skills with the same name (e.g., in different `.agents/skills` directories) to confirm the preview refreshes correctly.
+- [ ] 3.3 Manual Verification: Confirm `AGENTS.md` virtual skill still displays correctly.
+
+## Phase 4: Cleanup / Finalization
+
+- [ ] 4.1 Run all tests in the project (`go test ./...`) to ensure no regressions in navigation or filtering.

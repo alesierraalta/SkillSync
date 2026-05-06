@@ -255,7 +255,7 @@ func ensureAgentsMD() error {
 // from the mirrored skills plus the 5 base commands.
 func RegisterOpenCodeTools() error {
 	// Sync skills first
-	if err := opencode.SyncSkills(".", opencode.Options{}); err != nil {
+	if _, err := opencode.SyncSkills(".", opencode.Options{}); err != nil {
 		// Non-fatal: continue with tool registration even if sync fails
 	}
 
@@ -269,11 +269,12 @@ func RegisterOpenCodeTools() error {
 	baseSkills := getBaseCommandSkills()
 	skills = append(baseSkills, skills...)
 
-	if err := opencode.RegenerateTools(".", skills, false); err != nil {
+	if _, err := opencode.RegenerateTools(".", skills, false); err != nil {
 		return err
 	}
 
-	return opencode.RegenerateCommands(".", skills, false)
+	_, err = opencode.RegenerateCommands(".", skills, false)
+	return err
 }
 
 // parseMirroredSkillsForEcosystem parses skills from .opencode/skills/.
@@ -344,5 +345,6 @@ func RegisterSkillManagerAgent() error {
 	baseSkills := getBaseCommandSkills()
 	skills = append(baseSkills, skills...)
 
-	return opencode.RegenerateAgent(".", skills, false)
+	_, err = opencode.RegenerateAgent(".", skills, false)
+	return err
 }

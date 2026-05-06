@@ -19,6 +19,21 @@ type SyncResult struct {
 	ExitCode int
 }
 
+// FileChange records a single file mutation detected during sync.
+type FileChange struct {
+	Path    string // relative to project root
+	Status  string // "modified" | "created" | "deleted" | "symlinked"
+	Before  string // old content ("" if created)
+	After   string // new content ("" if deleted)
+	Diff    string // unified diff or ""
+	Summary string // e.g. "+3 -1"
+}
+
+// SyncReport accumulates all file changes produced by a sync run.
+type SyncReport struct {
+	Changes []FileChange
+}
+
 // Runner handles execution of shell scripts
 const DefaultSyncPath = ".agents/skills/skill-sync/assets/sync.sh"
 

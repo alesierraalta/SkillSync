@@ -88,3 +88,27 @@ func TestHomeView_ContainsSyncOption(t *testing.T) {
 		t.Errorf("home view missing sync option, got:\n%s", view)
 	}
 }
+
+
+func TestInstallerOptions_ContainsOpenCode(t *testing.T) {
+	m := NewModel()
+	m.Width = 80
+	m.Height = 24
+	
+	output := m.installerOptionsView()
+	
+	// Check for explicit OPENCODE.MD label
+	if !strings.Contains(output, "OpenCode (OPENCODE.MD)") {
+		t.Errorf("installer options view missing explicit OPENCODE.MD label")
+	}
+	
+	// Check for card borders
+	if !strings.Contains(output, "┌") && !strings.Contains(output, "│") {
+		t.Errorf("installer options view missing card borders")
+	}
+	
+	// Check for header banner
+	if !strings.Contains(output, "SYNCK INSTALLER") {
+		t.Errorf("installer options view missing banner")
+	}
+}

@@ -41,4 +41,27 @@ var (
 
 	blurredTextareaStyle = lipgloss.NewStyle().
 				Border(lipgloss.HiddenBorder())
+
+	cardStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("62")).
+			Padding(0, 1).
+			MarginBottom(1)
+
+	cardTitleStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("205")).
+			Bold(true).
+			Padding(0, 1)
+
+	hintStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("240")).
+			Italic(true)
+
+	bannerStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("170")).
+			Bold(true).
+			MarginBottom(1)
+
+	checkmarkStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("42"))
 )

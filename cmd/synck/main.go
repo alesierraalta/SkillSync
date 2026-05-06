@@ -7,11 +7,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"skillsync/tui/internal/diff"
 	"skillsync/tui/internal/discovery"
 	"skillsync/tui/internal/install"
 	"skillsync/tui/internal/opencode"
 	"skillsync/tui/internal/parser"
 	"skillsync/tui/internal/runner"
+	"skillsync/tui/internal/syncengine"
 	"skillsync/tui/internal/types"
 	"skillsync/tui/internal/ui"
 	"strings"
@@ -90,9 +92,82 @@ func run(args []string) error {
 }
 
 func handleSync(args []string) error {
-	fmt.Println("🔄 Running synchronization...")
+	// Preserve legacy --scope behavior by delegating to the bash script path
+	hasScope := false
+	for _, a := range args {
+		if a == "--scope" {
+			hasScope = true
+			break
+		}
+	}
+	if hasScope {
+		return handleSyncLegacy(args)
+	}
+
+	f := flag.NewFlagSet("sync", flag.ContinueOnError)
+	verbose := f.Bool("verbose", false, "Show full diffs")
+	dryRun := f.Bool("dry-run", false, "Show what would be changed without writing")
+	if err := f.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
+		return err
+	}
 
 	// Find project root
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	root := findProjectRoot(cwd)
+	if root == "" {
+		return fmt.Errorf("could not find project root (missing .agents or .agent directory)")
+	}
+
+	fmt.Println("🔄 Running synchronization...")
+
+	progressCb := func(stage string, done, total int) {
+		fmt.Printf("→ [%d/%d] %s...\n", done, total, stage)
+	}
+
+	// Stages 1-2: sync engine
+	opts := syncengine.SyncOptions{
+		DryRun:     *dryRun,
+		ProgressCb: progressCb,
+	}
+	engineReport, err := syncengine.Sync(root, opts)
+	if err != nil {
+		return fmt.Errorf("sync failed: %w", err)
+	}
+
+	// Stages 3-8: opencode
+	opencodeOpts := opencode.Options{
+		DryRun:     *dryRun,
+		ProgressCb: progressCb,
+	}
+	opencodeReport, err := syncOpenCodeForRoot(root, opencodeOpts)
+	if err != nil {
+		fmt.Printf("⚠️ OpenCode sync warning: %v\n", err)
+	}
+
+	// Merge reports
+	merged := &runner.SyncReport{}
+	merged.Changes = append(merged.Changes, engineReport.Changes...)
+	if opencodeReport != nil {
+		merged.Changes = append(merged.Changes, opencodeReport.Changes...)
+	}
+
+	fmt.Println("✅ Synchronization complete.")
+	fmt.Println()
+	fmt.Print(renderReport(merged, *verbose))
+
+	return nil
+}
+
+// handleSyncLegacy preserves the original bash-script execution path for --scope.
+func handleSyncLegacy(args []string) error {
+	fmt.Println("🔄 Running synchronization...")
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -166,7 +241,7 @@ func handleSyncOpenCode(args []string) error {
 // runSyncOpenCode executes the OpenCode sync with the given options.
 // If nonFatal is true, errors are printed as warnings instead of returned.
 func runSyncOpenCode(root string, opts opencode.Options, nonFatal bool) error {
-	err := syncOpenCodeForRoot(root, opts)
+	_, err := syncOpenCodeForRoot(root, opts)
 	if err != nil {
 		if nonFatal {
 			return err // caller will print warning
@@ -180,48 +255,76 @@ func runSyncOpenCode(root string, opts opencode.Options, nonFatal bool) error {
 }
 
 // syncOpenCodeForRoot performs the full OpenCode sync for a given root.
-func syncOpenCodeForRoot(root string, opts opencode.Options) error {
-	// Mirror skills
-	if err := opencode.SyncSkills(root, opts); err != nil {
-		return fmt.Errorf("mirror: %w", err)
-	}
+func syncOpenCodeForRoot(root string, opts opencode.Options) (*runner.SyncReport, error) {
+	report := &runner.SyncReport{}
 
-	// Parse mirrored skills
+	// Stage 3: Mirror skills
+	if opts.ProgressCb != nil {
+		opts.ProgressCb("Mirroring skills", 3, 8)
+	}
+	syncReport, err := opencode.SyncSkills(root, opts)
+	if err != nil {
+		return report, fmt.Errorf("mirror: %w", err)
+	}
+	report.Changes = append(report.Changes, syncReport.Changes...)
+
+	// Stage 4: Parse mirrored skills
+	if opts.ProgressCb != nil {
+		opts.ProgressCb("Parsing mirrored skills", 4, 8)
+	}
 	skills, err := parseMirroredSkills(root)
 	if err != nil {
-		return fmt.Errorf("parse skills: %w", err)
+		return report, fmt.Errorf("parse skills: %w", err)
 	}
 
-	// Ensure package.json exists before regenerating tools
+	// Stage 5: Ensure package.json / Regenerate tools
+	if opts.ProgressCb != nil {
+		opts.ProgressCb("Regenerating tools", 5, 8)
+	}
 	if !opts.DryRun {
 		if err := opencode.EnsurePackageJSON(root); err != nil {
-			return fmt.Errorf("ensure package.json: %w", err)
+			return report, fmt.Errorf("ensure package.json: %w", err)
 		}
 	}
-
-	// Regenerate tools
-	if err := opencode.RegenerateTools(root, skills, opts.DryRun); err != nil {
-		return fmt.Errorf("regenerate tools: %w", err)
+	toolsReport, err := opencode.RegenerateTools(root, skills, opts.DryRun)
+	if err != nil {
+		return report, fmt.Errorf("regenerate tools: %w", err)
 	}
+	report.Changes = append(report.Changes, toolsReport.Changes...)
 
-	// Regenerate agent
-	if err := opencode.RegenerateAgent(root, skills, opts.DryRun); err != nil {
-		return fmt.Errorf("regenerate agent: %w", err)
+	// Stage 6: Regenerate agent
+	if opts.ProgressCb != nil {
+		opts.ProgressCb("Regenerating agent", 6, 8)
 	}
+	agentReport, err := opencode.RegenerateAgent(root, skills, opts.DryRun)
+	if err != nil {
+		return report, fmt.Errorf("regenerate agent: %w", err)
+	}
+	report.Changes = append(report.Changes, agentReport.Changes...)
 
-	// Copy AGENTS.md to OPENCODE.md
+	// Stage 7: Copy AGENTS.md to OPENCODE.md
+	if opts.ProgressCb != nil {
+		opts.ProgressCb("Copying AGENTS.md", 7, 8)
+	}
 	if !opts.DryRun {
-		if err := opencode.CopyAgentsMD(root); err != nil {
-			return fmt.Errorf("copy agents: %w", err)
+		copyReport, err := opencode.CopyAgentsMD(root)
+		if err != nil {
+			return report, fmt.Errorf("copy agents: %w", err)
 		}
+		report.Changes = append(report.Changes, copyReport.Changes...)
 	}
 
-	// Regenerate markdown commands
-	if err := opencode.RegenerateCommands(root, skills, opts.DryRun); err != nil {
-		return fmt.Errorf("regenerate commands: %w", err)
+	// Stage 8: Regenerate commands
+	if opts.ProgressCb != nil {
+		opts.ProgressCb("Regenerating commands", 8, 8)
 	}
+	cmdReport, err := opencode.RegenerateCommands(root, skills, opts.DryRun)
+	if err != nil {
+		return report, fmt.Errorf("regenerate commands: %w", err)
+	}
+	report.Changes = append(report.Changes, cmdReport.Changes...)
 
-	return nil
+	return report, nil
 }
 
 // parseMirroredSkills parses all mirrored skills from .opencode/skills/.
@@ -447,5 +550,34 @@ func findProjectRoot(startDir string) string {
 
 func versionString() string {
 	return fmt.Sprintf("synck version %s (build %s)", version, version)
+}
+
+func renderReport(report *runner.SyncReport, verbose bool) string {
+	if len(report.Changes) == 0 {
+		return "No files changed.\n"
+	}
+
+	var b strings.Builder
+	b.WriteString("Changed files:\n")
+
+	for _, change := range report.Changes {
+		diffStr := change.Diff
+		if verbose && (change.Status == "modified" || change.Status == "created" || change.Status == "deleted") {
+			if change.Before != "" || change.After != "" {
+				diffStr, _ = diff.UnifiedDiff(change.Before, change.After, 0)
+			}
+		}
+
+		b.WriteString(fmt.Sprintf("\n  %s (%s) %s\n", change.Path, change.Status, change.Summary))
+		b.WriteString("  " + strings.Repeat("─", 40) + "\n")
+
+		if diffStr != "" {
+			for _, line := range strings.Split(diffStr, "\n") {
+				b.WriteString("  " + line + "\n")
+			}
+		}
+	}
+
+	return b.String()
 }
 
