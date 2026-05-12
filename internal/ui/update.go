@@ -1,14 +1,14 @@
 package ui
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
-	"skillsync/tui/internal/discovery"
-	"skillsync/tui/internal/parser"
+	"strings"
+
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
+	"skillsync/tui/internal/syncengine"
 	"skillsync/tui/internal/types"
 	"time"
 
@@ -31,18 +31,19 @@ type installerFinishedMsg struct {
 }
 
 type storedSkillsLoadedMsg []storage.StoredSkill
+type projectsLoadedMsg []storage.ProjectInfo
 type statusMsg string
 
 func (m Model) loadSkills() tea.Cmd {
 	return func() tea.Msg {
-		paths, err := discovery.DiscoverSkills(m.rootPath)
+		paths, err := m.backend.DiscoverSkills(m.rootPath)
 		if err != nil {
 			return errorMsg(err)
 		}
 
 		var skills []types.Skill
 		for _, p := range paths {
-			s, err := parser.Parse(p)
+			s, err := m.backend.ParseSkill(p)
 			if err == nil {
 				skills = append(skills, *s)
 			}
@@ -89,6 +90,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				seen[s.Path] = true
 			}
 		}
+		m.allSkills = items
 		cmd = m.list.SetItems(items)
 		return m, cmd
 
@@ -99,14 +101,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		listWidth := int(float64(m.Width) * 0.4)
 		previewWidth := m.Width - listWidth
 
-		m.list.SetSize(listWidth, m.Height)
+		searchBarHeight := 3
+		m.list.SetSize(listWidth, m.Height-searchBarHeight-2)
 		m.viewport.Width = previewWidth
-		m.viewport.Height = m.Height
+		m.viewport.Height = m.Height - 2
 
 		if m.Screen == ScreenContentView {
 			m.viewport.Width = m.Width
 			m.viewport.Height = m.Height - 6
 		}
+
+		m.storageList.SetSize(m.Width-4, m.Height-8)
+		m.projectList.SetSize(m.Width-4, m.Height-8)
 
 		// Force re-render of preview to reflow markdown
 		m.updatePreview()
@@ -124,6 +130,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.syncOutput = "✅ Sync Successful!\n\n" + m.syncOutput
 			m.Progress.SetPercent(1.0)
+
+			// Register project after successful sync
+			absRoot, _ := filepath.Abs(m.rootPath)
+			_ = m.backend.RegisterProject(absRoot)
 		}
 		return m, nil
 
@@ -160,12 +170,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 
+	case projectsLoadedMsg:
+		var items []list.Item
+		for _, p := range msg {
+			items = append(items, projectItem{project: p})
+		}
+		cmd = m.projectList.SetItems(items)
+		return m, cmd
+
 	case statusMsg:
+		if m.Screen == ScreenList {
+			cmd = m.list.NewStatusMessage(string(msg))
+			return m, cmd
+		}
 		m.StatusMsg = string(msg)
 		return m, nil
 
 	case errorMsg:
 		m.err = msg
+		return m, nil
+
+	case syncReportMsg:
+		m.SyncFinished = true
+		m.syncReport = msg.report
+		m.err = msg.err
+		if msg.err != nil {
+			m.SyncFailed = true
+		}
 		return m, nil
 
 	case syncFinishedMsg:
@@ -202,6 +233,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleInstallerKeys(msg)
 	case ScreenStorage:
 		return m.handleStorageKeys(msg)
+	case ScreenProjects:
+		return m.handleProjectsKeys(msg)
 	}
 
 	return m, nil
@@ -214,7 +247,7 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.HomeCursor--
 		}
 	case "down", "j":
-		if m.HomeCursor < 3 {
+		if m.HomeCursor < 4 {
 			m.HomeCursor++
 		}
 	case "enter", " ":
@@ -231,6 +264,9 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.HomeCursor == 3 {
 			m.StatusMsg = "Sincronizando con OpenCode..."
 			return m, m.syncOpenCodeCmd()
+		} else if m.HomeCursor == 4 {
+			m.Screen = ScreenProjects
+			return m, m.loadProjectsCmd()
 		}
 	case "1":
 		m.HomeCursor = 0
@@ -249,6 +285,10 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.HomeCursor = 3
 		m.StatusMsg = "Sincronizando con OpenCode..."
 		return m, m.syncOpenCodeCmd()
+	case "5":
+		m.HomeCursor = 4
+		m.Screen = ScreenProjects
+		return m, m.loadProjectsCmd()
 	case "esc", "q":
 		return m, tea.Quit
 	}
@@ -263,7 +303,24 @@ func (m Model) syncOpenCodeCmd() tea.Cmd {
 }
 
 func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.searchFocused {
+		switch msg.String() {
+		case "esc", "tab":
+			m.searchFocused = false
+			m.searchInput.Blur()
+			return m, nil
+		}
+
+		var cmd tea.Cmd
+		m.searchInput, cmd = m.searchInput.Update(msg)
+		m.filterSkills(m.searchInput.Value())
+		return m, cmd
+	}
+
 	switch msg.String() {
+	case "tab":
+		m.searchFocused = true
+		return m, m.searchInput.Focus()
 	case "enter", "v":
 		if i, ok := m.list.SelectedItem().(item); ok {
 			m.selected = &i.skill
@@ -322,7 +379,7 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if isReadOnly {
 			return m, nil
 		}
-		// Explicitly force values into selected before saving, 
+		// Explicitly force values into selected before saving,
 		// just in case they aren't syncing.
 		m.selected.Metadata.Description = m.inputs[0].Value()
 		m.selected.Metadata.Scope = m.inputs[1].Value()
@@ -447,8 +504,53 @@ func (m Model) handleComponentUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport, cmd = m.viewport.Update(msg)
 	case ScreenStorage:
 		m.storageList, cmd = m.storageList.Update(msg)
+	case ScreenProjects:
+		m.projectList, cmd = m.projectList.Update(msg)
 	}
 	return m, cmd
+}
+
+func (m Model) handleProjectsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.Screen = ScreenHome
+		m.HomeCursor = 4
+		return m, nil
+	case "r":
+		m.StatusMsg = "Buscando proyectos..."
+		return m, m.scanProjectsCmd()
+	}
+
+	var cmd tea.Cmd
+	m.projectList, cmd = m.projectList.Update(msg)
+	return m, cmd
+}
+
+func (m Model) scanProjectsCmd() tea.Cmd {
+	return func() tea.Msg {
+		// Scan relevant roots: HOME and parent of current root
+		var roots []string
+		if home, err := os.UserHomeDir(); err == nil {
+			roots = append(roots, home)
+		}
+		if absRoot, err := filepath.Abs(m.rootPath); err == nil {
+			roots = append(roots, filepath.Dir(absRoot))
+		}
+
+		// Depth 3 is a good balance
+		paths, err := m.backend.ScanProjects(roots, 3)
+		if err != nil {
+			return errorMsg(err)
+		}
+
+		// Register found projects
+		for _, p := range paths {
+			_ = m.backend.RegisterProjectInitial(p)
+		}
+
+		// Reload list from storage (which filters dead paths)
+		return m.loadProjectsCmd()()
+	}
 }
 
 func (m *Model) setupInputs() {
@@ -507,14 +609,16 @@ func (m *Model) setupInputs() {
 
 func (m Model) startSync() tea.Cmd {
 	return func() tea.Msg {
-		
 		// Ensure core shared library and AGENTS.md exist before syncing
 		_ = installCoreSharedLib()
 		_ = ensureAgentsMD()
 
-		r := runner.NewRunner("./.agents/skills/skill-sync/assets/sync.sh")
-		resChan := r.ExecuteSync(context.Background(), nil)
-		return <-resChan
+		opts := syncengine.SyncOptions{
+			DryRun: false,
+		}
+
+		report, err := m.backend.Sync(m.rootPath, opts)
+		return syncReportMsg{report: report, err: err}
 	}
 }
 
@@ -527,21 +631,22 @@ func (m Model) saveSkill() tea.Cmd {
 	m.selected.RawBody = m.inputs[2].Value()
 
 	return func() tea.Msg {
-		err := parser.Save(m.selected.Path, m.selected)
-		if err != nil {
-			return errorMsg(err)
-		}
+		_ = m.backend.SaveSkill(m.selected.Path, m.selected)
 		return m.loadSkills()()
 	}
 }
 
 func (m Model) loadStoredSkillsCmd() tea.Cmd {
 	return func() tea.Msg {
-		skills, err := m.storageService.List()
-		if err != nil {
-			return errorMsg(err)
-		}
+		skills, _ := m.backend.ListStoredSkills()
 		return storedSkillsLoadedMsg(skills)
+	}
+}
+
+func (m Model) loadProjectsCmd() tea.Cmd {
+	return func() tea.Msg {
+		projects, _ := m.backend.GetProjects()
+		return projectsLoadedMsg(projects)
 	}
 }
 
@@ -556,10 +661,10 @@ func (m Model) saveToStorageCmd() tea.Cmd {
 	if target == nil {
 		return nil
 	}
-	
+
 	// Create a copy to avoid race conditions if needed
 	skill := *target
-	
+
 	// Metadata from the current context
 	absPath, _ := filepath.Abs(m.rootPath)
 	metadata := storage.StoredMetadata{
@@ -571,10 +676,7 @@ func (m Model) saveToStorageCmd() tea.Cmd {
 	}
 
 	return func() tea.Msg {
-		err := m.storageService.Save(&skill, metadata)
-		if err != nil {
-			return errorMsg(err)
-		}
+		_ = m.backend.SaveToStorage(&skill, metadata)
 		return statusMsg(fmt.Sprintf("Skill '%s' guardada en almacenamiento global", skill.Name))
 	}
 }
@@ -585,9 +687,81 @@ func (m Model) handleStorageKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.Screen = ScreenHome
 		m.HomeCursor = 2
 		return m, nil
+	case "i":
+		if itm, ok := m.storageList.SelectedItem().(storageItem); ok {
+			m.PrevScreen = m.Screen
+			m.Screen = ScreenSyncing
+			m.SyncFailed = false
+			return m, m.installFromStorageAndSyncCmd(itm.stored)
+		}
 	}
-	
+
 	var cmd tea.Cmd
 	m.storageList, cmd = m.storageList.Update(msg)
 	return m, cmd
+}
+
+func (m Model) installFromStorageAndSyncCmd(stored storage.StoredSkill) tea.Cmd {
+	return func() tea.Msg {
+		// 1. Load from storage
+		content, err := m.backend.LoadFromStorage(stored.ID)
+		if err != nil {
+			return runner.SyncResult{
+				ExitCode: 1,
+				Stderr:   fmt.Sprintf("Failed to load skill from storage: %v", err),
+			}
+		}
+
+		// 2. Parse content to get metadata (especially Skill Name)
+		// We use parser.ParseContent to handle the raw SKILL.md content
+		skill, err := m.backend.ParseSkillContent(content)
+		if err != nil {
+			return runner.SyncResult{
+				ExitCode: 1,
+				Stderr:   fmt.Sprintf("Malformed YAML: Edit and fix\n\nDetails: %v", err),
+			}
+		}
+
+		// Ensure we use the name from stored metadata if parser fails to find one
+		if skill.Name == "" {
+			skill.Name = stored.Metadata.SkillName
+		}
+
+		// 3. Write to local project
+		skillDir := filepath.Join(m.rootPath, ".agents", "skills", skill.Name)
+		if err := os.MkdirAll(skillDir, 0755); err != nil {
+			return runner.SyncResult{
+				ExitCode: 1,
+				Stderr:   fmt.Sprintf("Failed to create skill directory %s: %v", skillDir, err),
+			}
+		}
+
+		skillPath := filepath.Join(skillDir, "SKILL.md")
+		if err := os.WriteFile(skillPath, []byte(content), 0644); err != nil {
+			return runner.SyncResult{
+				ExitCode: 1,
+				Stderr:   fmt.Sprintf("Failed to write skill file %s: %v", skillPath, err),
+			}
+		}
+
+		// 4. Trigger Sync
+		return m.startSync()()
+	}
+}
+
+func (m *Model) filterSkills(query string) {
+	if query == "" {
+		m.list.SetItems(m.allSkills)
+		return
+	}
+	q := strings.ToLower(query)
+	var filtered []list.Item
+	for _, it := range m.allSkills {
+		if itm, ok := it.(item); ok {
+			if strings.Contains(strings.ToLower(itm.FilterValue()), q) {
+				filtered = append(filtered, it)
+			}
+		}
+	}
+	m.list.SetItems(filtered)
 }

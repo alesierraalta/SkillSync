@@ -1,16 +1,10 @@
 package ui
 
-
-
 import (
-
 	"fmt"
 
 	"github.com/charmbracelet/lipgloss"
-
 )
-
-
 
 func (m Model) View() string {
 
@@ -19,8 +13,6 @@ func (m Model) View() string {
 		return errorStyle.Render(fmt.Sprintf("Error: %v", m.err))
 
 	}
-
-
 
 	var content string
 
@@ -54,9 +46,11 @@ func (m Model) View() string {
 
 		content = m.storageView()
 
+	case ScreenProjects:
+
+		content = m.projectsView()
+
 	}
-
-
 
 	if m.Screen == ScreenSyncing {
 		return content
@@ -64,8 +58,6 @@ func (m Model) View() string {
 
 	return content + "\n" + m.renderFooter()
 }
-
-
 
 func (m Model) renderFooter() string {
 
@@ -89,22 +81,17 @@ func (m Model) renderFooter() string {
 
 }
 
-
-
 func (m Model) homeView() string {
 
 	title := titleStyle.Render("Agent Skills TUI")
-
-
 
 	opts := []string{
 		"1. Instanciar ecosistema",
 		"2. Gestionar skills",
 		"3. Almacenamiento de skills",
 		"4. Sincronizar con OpenCode",
+		"5. Proyectos",
 	}
-
-
 
 	var body string
 
@@ -122,41 +109,36 @@ func (m Model) homeView() string {
 
 	}
 
-
-
 	if m.StatusMsg != "" {
 
 		body += "\n" + m.StatusMsg + "\n"
 
 	}
 
-
-
 	return title + "\n\n" + body
 
 }
 
-
-
 func (m Model) splitView() string {
-
 	listWidth := int(float64(m.Width) * 0.4)
-
 	previewWidth := m.Width - listWidth
 
+	var searchBar string
+	if m.searchFocused {
+		searchBar = searchBarFocused.Width(listWidth - 2).Render(m.searchInput.View())
+	} else {
+		searchBar = searchBarBlurred.Width(listWidth - 2).Render(m.searchInput.View())
+	}
 
+	leftViewItems := []string{searchBar, m.list.View()}
 
-	left := listStyle.Width(listWidth).Render(m.list.View())
+	leftView := lipgloss.JoinVertical(lipgloss.Left, leftViewItems...)
 
+	left := listStyle.Width(listWidth).Render(leftView)
 	right := viewportStyle.Width(previewWidth).Render(m.viewport.View())
 
-
-
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
-
 }
-
-
 
 func (m Model) detailView() string {
 
@@ -170,11 +152,7 @@ func (m Model) detailView() string {
 
 	s += titleStyle.Render(fmt.Sprintf("Editing Skill: %s", m.selected.Name)) + "\n\n"
 
-
-
 	labels := []string{"Description", "Scope", "Content (SKILL.md)"}
-
-
 
 	for i := range m.inputs {
 
@@ -198,12 +176,15 @@ func (m Model) detailView() string {
 
 }
 
-
-
 func (m Model) syncingView() string {
-	titleText := "Installing Ecosistema..."
-	if m.PrevScreen == ScreenList || m.PrevScreen == ScreenContentView {
+	var titleText string
+	switch m.PrevScreen {
+	case ScreenList, ScreenContentView:
 		titleText = "Syncing Skills..."
+	case ScreenStorage:
+		titleText = "Installing Skill..."
+	default:
+		titleText = "Installing Ecosistema..."
 	}
 	title := titleStyle.Render(titleText)
 
@@ -211,7 +192,23 @@ func (m Model) syncingView() string {
 	if m.SyncFailed {
 		outputStyle = errorStyle
 	}
-	currentTask := outputStyle.Render(m.syncOutput)
+
+	content := m.syncOutput
+	if m.SyncFinished {
+		if m.syncReport != nil {
+			content = "✅ Sync Successful!\n\n"
+			content += fmt.Sprintf("Skills synced: %d\n", len(m.syncReport.Changes))
+			for _, change := range m.syncReport.Changes {
+				content += fmt.Sprintf("  • %s (%s)\n", change.Path, change.Status)
+			}
+		} else if m.err != nil {
+			content = errorStyle.Render("❌ Sync Failed") + "\n\n"
+			content += "Error Details:\n"
+			content += m.err.Error()
+		}
+	}
+
+	currentTask := outputStyle.Render(content)
 
 	s := title + "\n\n"
 	s += currentTask + "\n\n"
@@ -224,8 +221,6 @@ func (m Model) syncingView() string {
 
 	return s
 }
-
-
 
 func (m Model) contentView() string {
 
@@ -240,8 +235,6 @@ func (m Model) contentView() string {
 	return header + "\n\n" + m.viewport.View()
 
 }
-
-
 
 func (m Model) splitInstallerView() string {
 	listWidth := int(float64(m.Width) * 0.5)
@@ -259,8 +252,6 @@ func (m Model) splitInstallerView() string {
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 }
-
-
 
 func (m Model) renderCard(title, content string, width int) string {
 	styledTitle := cardTitleStyle.Render(title)
@@ -280,11 +271,14 @@ func (m Model) installerOptionsView() string {
 	pathInfo := fmt.Sprintf("Target: %s", m.rootPath)
 	header := lipgloss.JoinVertical(lipgloss.Left, banner, pathInfo)
 
-	modeStr := "[ Symlink (Global) ] / Copy (Local)"
+	recommendedCheck := checkmarkStyle.Render("[x]")
+	advancedCheck := "[ ]"
 	if m.installerMode {
-		modeStr = "Symlink (Global) / [ Copy (Local) ]"
+		recommendedCheck = "[ ]"
+		advancedCheck = checkmarkStyle.Render("[x]")
 	}
-	header += "\nMode (M to toggle): " + modeStr + "\n\n"
+	modeStr := fmt.Sprintf("Mode (M to toggle):\n  %s Recommended\n      Use one shared install everywhere\n  %s Advanced\n      Create an isolated copy here", recommendedCheck, advancedCheck)
+	header += "\n" + modeStr + "\n\n"
 
 	// Providers
 	var providersView string
@@ -299,7 +293,7 @@ func (m Model) installerOptionsView() string {
 			check = checkmarkStyle.Render("[x]")
 		}
 		providersView += fmt.Sprintf("%s%s %s\n", cursor, check, p)
-		
+
 		// Task 3.2: Hint for OpenCode
 		if i == 4 && m.installerCursor == 4 {
 			providersView += hintStyle.Render("    Effect: Synced AGENTS.md -> OPENCODE.MD") + "\n"
@@ -341,7 +335,7 @@ func (m Model) installerOptionsView() string {
 	// Global & Action
 	var footer string
 	storageOffset := len(m.storedSkills)
-	
+
 	cursorGlobal := "  "
 	if m.installerCursor == 8+storageOffset {
 		cursorGlobal = "> "
@@ -367,35 +361,57 @@ func (m Model) installerOptionsView() string {
 	)
 }
 
-
-
 func (m Model) installerPreviewView() string {
 	width := m.Width - int(float64(m.Width)*0.5) - 4
 
 	var content string
-	
+
 	// Directories
 	content += lipgloss.NewStyle().Bold(true).Render("DIRECTORIES TO CREATE:") + "\n"
-	if m.installerProviders[0] { content += "  + .claude/skills/\n" }
-	if m.installerProviders[1] { content += "  + .gemini/skills/\n" }
-	if m.installerProviders[2] { content += "  + .codex/skills/\n" }
-	if m.installerProviders[3] { content += "  + .github/\n" }
-	if m.installerProviders[4] { content += "  + .opencode/skills/\n" }
+	if m.installerProviders[0] {
+		content += "  + .claude/skills/\n"
+	}
+	if m.installerProviders[1] {
+		content += "  + .gemini/skills/\n"
+	}
+	if m.installerProviders[2] {
+		content += "  + .codex/skills/\n"
+	}
+	if m.installerProviders[3] {
+		content += "  + .github/\n"
+	}
+	if m.installerProviders[4] {
+		content += "  + .opencode/skills/\n"
+	}
 	content += "\n"
 
 	// Skills
 	content += lipgloss.NewStyle().Bold(true).Render("SKILLS TO COPY/LINK:") + "\n"
-	if m.installerSkills[0] { content += "  + skill-creator -> .agent/skills/skill-creator\n" }
-	if m.installerSkills[1] { content += "  + skill-sync    -> .agent/skills/skill-sync\n" }
-	if m.installerSkills[2] { content += "  + find-skills   -> .agent/skills/find-skills\n" }
+	if m.installerSkills[0] {
+		content += "  + skill-creator -> .agent/skills/skill-creator\n"
+	}
+	if m.installerSkills[1] {
+		content += "  + skill-sync    -> .agent/skills/skill-sync\n"
+	}
+	if m.installerSkills[2] {
+		content += "  + find-skills   -> .agent/skills/find-skills\n"
+	}
 	content += "\n"
 
 	// Configs
 	content += lipgloss.NewStyle().Bold(true).Render("CONFIG FILES TO SYNC:") + "\n"
-	if m.installerProviders[0] { content += "  + AGENTS.md -> CLAUDE.md\n" }
-	if m.installerProviders[1] { content += "  + AGENTS.md -> GEMINI.md\n" }
-	if m.installerProviders[3] { content += "  + AGENTS.md -> .github/copilot-instructions.md\n" }
-	if m.installerProviders[4] { content += "  + AGENTS.md -> OPENCODE.MD\n" }
+	if m.installerProviders[0] {
+		content += "  + AGENTS.md -> CLAUDE.md\n"
+	}
+	if m.installerProviders[1] {
+		content += "  + AGENTS.md -> GEMINI.md\n"
+	}
+	if m.installerProviders[3] {
+		content += "  + AGENTS.md -> .github/copilot-instructions.md\n"
+	}
+	if m.installerProviders[4] {
+		content += "  + AGENTS.md -> OPENCODE.MD\n"
+	}
 	content += "\n"
 
 	if m.installerGlobal {
@@ -406,7 +422,6 @@ func (m Model) installerPreviewView() string {
 	return m.renderCard("📋 INSTALLATION PREVIEW", content, width)
 }
 
-
 func (m Model) storageView() string {
 	s := titleStyle.Render("Almacenamiento Global de Skills") + "\n\n"
 	if len(m.storedSkills) == 0 {
@@ -415,3 +430,10 @@ func (m Model) storageView() string {
 	return s + docStyle.Render(m.storageList.View())
 }
 
+func (m Model) projectsView() string {
+	s := titleStyle.Render("Proyectos Sincronizados") + "\n\n"
+	if len(m.projectList.Items()) == 0 {
+		return s + lipgloss.NewStyle().MarginLeft(4).Render("No se encontraron proyectos. Presioná '4' para sincronizar este proyecto y registrarlo.")
+	}
+	return s + docStyle.Render(m.projectList.View())
+}

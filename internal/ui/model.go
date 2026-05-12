@@ -8,24 +8,31 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
+	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/syncengine"
 	"skillsync/tui/internal/types"
 )
 
 // syncEngineSync is the default sync engine function; override in tests.
-var syncEngineSync = func(root string, opts syncengine.SyncOptions) error {
-	_, err := syncengine.Sync(root, opts)
-	return err
+// syncEngineSync is deprecated and will be removed in favor of AppService.Sync
+var syncEngineSync = func(m *Model, root string, opts syncengine.SyncOptions) (*runner.SyncReport, error) {
+	return m.backend.Sync(root, opts)
 }
 
 type Screen int
 
 type syncFinishedMsg struct {
 	err error
+}
+
+type syncReportMsg struct {
+	report *runner.SyncReport
+	err    error
 }
 
 const (
@@ -36,6 +43,7 @@ const (
 	ScreenContentView
 	ScreenInstaller
 	ScreenStorage
+	ScreenProjects
 )
 
 type Model struct {
@@ -57,12 +65,13 @@ type Model struct {
 	Progress       progress.Model
 	SyncFailed     bool
 	SyncFinished   bool
+	syncReport     *runner.SyncReport
 
 	// Installer State
-	installerCursor    int
-	installerMode      bool // false = Symlink, true = Copy
-	installerProviders []bool
-	installerSkills    []bool
+	installerCursor       int
+	installerMode         bool // false = Recommended (Symlink/Global), true = Advanced (Copy/Local)
+	installerProviders    []bool
+	installerSkills       []bool
 	installerGlobal       bool
 	installerStoredSkills []bool
 
@@ -70,6 +79,17 @@ type Model struct {
 	storageList    list.Model
 	storedSkills   []storage.StoredSkill
 	storageService *storage.Service
+
+	// Projects State
+	projectList list.Model
+
+	// Search State
+	searchInput   textinput.Model
+	allSkills     []list.Item
+	searchFocused bool
+
+	// Service Layer
+	backend AppService
 }
 
 type item struct {
@@ -88,14 +108,27 @@ func (i storageItem) Description() string {
 }
 func (i storageItem) FilterValue() string { return i.stored.Metadata.SkillName }
 
+type projectItem struct {
+	project storage.ProjectInfo
+}
+
+func (i projectItem) Title() string { return i.project.Path }
+func (i projectItem) Description() string {
+	if i.project.LastSynced.IsZero() {
+		return "Último sync: Nunca"
+	}
+	return fmt.Sprintf("Último sync: %s", i.project.LastSynced.Format("2006-01-02 15:04"))
+}
+func (i projectItem) FilterValue() string { return i.project.Path }
+
 func (i item) Title() string {
 	if i.skill.ID == "virtual:agents" {
 		return i.skill.Name
 	}
-	
+
 	path := filepath.ToSlash(i.skill.Path)
 	segments := strings.Split(path, "/")
-	
+
 	flag := ""
 	for _, segment := range segments {
 		switch segment {
@@ -107,7 +140,7 @@ func (i item) Title() string {
 			break
 		}
 	}
-	
+
 	if flag == "" {
 		return i.skill.Name
 	}
@@ -116,25 +149,35 @@ func (i item) Title() string {
 func (i item) Description() string { return i.skill.Metadata.Description }
 func (i item) FilterValue() string { return i.skill.Name }
 
-func NewModel() Model {
+func NewModel(backend AppService) Model {
 	l := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	l.Title = "Skillsync TUI"
+	l.KeyMap.Filter.SetEnabled(false)
 
 	sl := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	sl.Title = "Almacenamiento Global"
+
+	pl := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	pl.Title = "Proyectos Sincronizados"
+
+	ti := textinput.New()
+	ti.Placeholder = "Search skills..."
+	ti.Blur()
 
 	return Model{
 		Screen:             ScreenHome,
 		PrevScreen:         ScreenHome,
 		list:               l,
 		storageList:        sl,
+		projectList:        pl,
 		viewport:           viewport.New(0, 0),
 		rootPath:           ".",
 		Progress:           progress.New(progress.WithDefaultGradient()),
 		installerProviders: []bool{true, false, true, false, true},
 		installerSkills:    []bool{true, true, true},
 		installerGlobal:    true,
-		storageService:     storage.NewService(""),
+		searchInput:        ti,
+		backend:            backend,
 	}
 }
 
@@ -177,6 +220,12 @@ func (m Model) GetKeyBindings() []KeyBinding {
 		return []KeyBinding{
 			{Key: "esc", Help: "back"},
 			{Key: "up/down", Help: "navigate"},
+			{Key: "i", Help: "install & sync"},
+		}
+	case ScreenProjects:
+		return []KeyBinding{
+			{Key: "esc/q", Help: "back"},
+			{Key: "r", Help: "refresh projects"},
 		}
 	default:
 		return []KeyBinding{
@@ -186,7 +235,7 @@ func (m Model) GetKeyBindings() []KeyBinding {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadSkills(), instantiateEcosystemCmd())
+	return tea.Batch(m.loadSkills(), instantiateEcosystemCmd(m.backend, m.rootPath))
 }
 
 func (m *Model) initRenderer() error {

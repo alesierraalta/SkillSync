@@ -1,14 +1,17 @@
 package ui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
 	"fmt"
+	"skillsync/tui/internal/storage"
 
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Run launches the TUI program
 func Run() error {
-	p := tea.NewProgram(NewModel(), tea.WithAltScreen())
+	storageService := storage.NewService("")
+	backend := NewBackend(storageService)
+	p := tea.NewProgram(NewModel(backend), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("alas, there's been an error: %v", err)
 	}
