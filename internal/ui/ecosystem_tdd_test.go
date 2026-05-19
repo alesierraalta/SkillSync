@@ -37,11 +37,12 @@ func TestNextInstallerStep_BypassMalformedYAML(t *testing.T) {
 	backendSvc := NewBackend(sService)
 	m := NewModel(backendSvc)
 	m.storedSkills, _ = sService.List()
-	m.installerStoredSkills = make([]bool, len(m.storedSkills))
+	m.Installer.AllStored = m.storedSkills
+	m.Installer.StoredSkills = make([]bool, len(m.storedSkills))
 
 	// Select both
-	for i := range m.installerStoredSkills {
-		m.installerStoredSkills[i] = true
+	for i := range m.Installer.StoredSkills {
+		m.Installer.StoredSkills[i] = true
 	}
 
 	// Run step 0.5

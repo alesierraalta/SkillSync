@@ -1,6 +1,6 @@
 ---
 managed_by: skillsync
-description: Entry point for skill management
+description: Skill management
 ---
 
 /synck skill "$!1"

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"os"
+	"skillsync/tui/internal/storage"
 	"strings"
 	"testing"
 )
@@ -15,13 +16,14 @@ func TestModelRefreshAfterInstall(t *testing.T) {
 	// Create a dummy AGENTS.md to satisfy loadSkills logic if needed
 	_ = os.WriteFile("AGENTS.md", []byte("# Agents"), 0644)
 
-	m := NewModel()
+	m := NewModel(NewBackend(storage.NewService("")))
 	m.rootPath = tmpDir
 	m.Screen = ScreenInstaller
 
 	// 1. Simulate successful installation of core skills
 	// First, manually install one so we can verify it's loaded
-	err := InstallCoreSkill("skill-sync")
+	backend := NewBackend(storage.NewService(""))
+	err := backend.InstallCoreSkill("skill-sync")
 	if err != nil {
 		t.Fatalf("failed to install core skill: %v", err)
 	}
@@ -29,7 +31,7 @@ func TestModelRefreshAfterInstall(t *testing.T) {
 	// 2. Send installerFinishedMsg
 	msg := installerFinishedMsg{err: nil}
 	newModel, cmd := m.Update(msg)
-	
+
 	m2 := newModel.(Model)
 
 	// 3. Verify screen transition
@@ -58,7 +60,7 @@ func TestModelRefreshAfterInstall(t *testing.T) {
 	m3 := newModel.(Model)
 
 	// 7. Verify skills are in the list
-	items := m3.list.Items()
+	items := m3.List.list.Items()
 	found := false
 	for _, it := range items {
 		if si, ok := it.(item); ok {

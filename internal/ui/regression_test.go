@@ -2,12 +2,13 @@ package ui
 
 import (
 	"skillsync/tui/internal/runner"
+	"skillsync/tui/internal/storage"
 	"strings"
 	"testing"
 )
 
 func TestSyncingView_Regression(t *testing.T) {
-	m := NewModel()
+	m := NewModel(NewBackend(storage.NewService("")))
 	m.Screen = ScreenSyncing
 	m.syncOutput = "Test Output"
 	m.Width = 100
@@ -24,7 +25,7 @@ func TestSyncingView_Regression(t *testing.T) {
 	// 2. Check title is dynamic
 	if strings.Contains(view, "Installing Ecosistema...") {
 		// Since we didn't set PrevScreen, it defaults to ScreenHome (0)
-		// and NewModel() sets it to ScreenHome.
+		// and NewModel(NewBackend(storage.NewService(""))) sets it to ScreenHome.
 		// So it should be "Installing Ecosistema..."
 	}
 
@@ -36,10 +37,10 @@ func TestSyncingView_Regression(t *testing.T) {
 }
 
 func TestSyncResult_ErrorTransition(t *testing.T) {
-	m := NewModel()
+	m := NewModel(NewBackend(storage.NewService("")))
 	m.Screen = ScreenSyncing
 	m.PrevScreen = ScreenList
-	
+
 	// Simulate an error from runner
 	msg := runner.SyncResult{
 		ExitCode: 1,
@@ -56,7 +57,7 @@ func TestSyncResult_ErrorTransition(t *testing.T) {
 	if !strings.Contains(res.syncOutput, "Exit: 1") {
 		t.Errorf("Expected syncOutput to contain 'Exit: 1', got: %s", res.syncOutput)
 	}
-	
+
 	// In the fix, we might want to change Screen to ScreenHome or show a clear error message.
 	// But first, let's just confirm it stays in ScreenSyncing (current behavior).
 	if res.Screen != ScreenSyncing {

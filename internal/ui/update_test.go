@@ -2,10 +2,12 @@ package ui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"github.com/charmbracelet/bubbles/list"
+	"skillsync/tui/internal/storage"
 	"strings"
 	"testing"
-
-	"github.com/charmbracelet/bubbles/list"
 	"skillsync/tui/internal/types"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -34,18 +36,18 @@ func TestSelectionSync(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel()
+			m := NewModel(NewBackend(storage.NewService("")))
 			m.Screen = ScreenList
 			m.Width = 100
 			m.Height = 50
 
 			s1 := types.Skill{ID: "1", Name: "S", RawBody: "Body 1"}
 			s2 := types.Skill{ID: "2", Name: "S", RawBody: "Body 2"}
-			m.list.SetItems([]list.Item{item{skill: s1}, item{skill: s2}})
-			m.viewport.Height = 10
-			m.viewport.Width = 30
-			m.lastSelectedID = tt.initialID
-			m.updatePreview()
+			m.List.list.SetItems([]list.Item{item{skill: s1}, item{skill: s2}})
+			m.List.viewport.Height = 10
+			m.List.viewport.Width = 30
+			m.List.lastSelectedID = tt.initialID
+			m.List.updatePreview()
 
 			var msg tea.Msg
 			if tt.moveKey != "" {
@@ -58,14 +60,14 @@ func TestSelectionSync(t *testing.T) {
 			m = newModel.(Model)
 
 			if tt.expectContent {
-				if m.viewport.Height == 0 {
+				if m.List.viewport.Height == 0 {
 					t.Error("viewport height is 0")
 				}
-				if m.viewport.View() == "" {
-					t.Errorf("expected viewport content for skill %s, but got empty. ID: %s", m.selected.Name, m.lastSelectedID)
+				if m.List.viewport.View() == "" {
+					t.Errorf("expected viewport content for skill %s, but got empty. ID: %s", m.selected.Name, m.List.lastSelectedID)
 				}
-				if m.lastSelectedID != "2" {
-					t.Errorf("expected lastSelectedID to be '2', got '%s'", m.lastSelectedID)
+				if m.List.lastSelectedID != "2" {
+					t.Errorf("expected lastSelectedID to be '2', got '%s'", m.List.lastSelectedID)
 				}
 			}
 		})
@@ -155,13 +157,14 @@ func TestScreenTransitions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel()
+			m := NewModel(NewBackend(storage.NewService("")))
 			m.Screen = tt.startScreen
 			m.PrevScreen = ScreenList
 
 			// Mock list selection for enter
 			if tt.startScreen == ScreenList && (tt.expectScreen == ScreenDetail || tt.expectScreen == ScreenContentView) {
-				m.list.SetItems([]list.Item{item{}})
+				m.List.list.SetItems([]list.Item{item{}})
+				m.List.selected = &types.Skill{}
 			}
 
 			newModel, _ := m.Update(tt.msg)
@@ -174,27 +177,106 @@ func TestScreenTransitions(t *testing.T) {
 	}
 }
 
+func TestHandleStorageKeys_InstallShortcut(t *testing.T) {
+	m := NewModel(NewBackend(storage.NewService("")))
+	m.Screen = ScreenStorage
+
+	// Mock some stored skills
+	s1 := storage.StoredSkill{
+		ID:       "skill1",
+		Metadata: storage.StoredMetadata{SkillName: "test-skill"},
+	}
+	m.storedSkills = []storage.StoredSkill{s1}
+
+	items := []list.Item{storageItem{stored: s1}}
+	m.storageList.SetItems(items)
+	m.storageList.Select(0)
+
+	// Press 'i'
+	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")}
+	newModel, cmd := m.Update(msg)
+	res := newModel.(Model)
+
+	if res.Screen != ScreenSyncing {
+		t.Errorf("expected ScreenSyncing, got %v", res.Screen)
+	}
+	if cmd == nil {
+		t.Error("expected a command to be returned, got nil")
+	}
+}
+
+func TestInstallFromStorageAndSyncCmd(t *testing.T) {
+	tmpDir := t.TempDir()
+	storageDir := t.TempDir()
+	m := NewModel(NewBackend(storage.NewService(storageDir)))
+	m.rootPath = tmpDir
+
+	skillContent := "test content"
+	sk := &types.Skill{Name: "test-skill", RawBody: skillContent}
+	err := m.backend.SaveToStorage(sk, storage.StoredMetadata{SkillName: "test-skill"})
+	if err != nil {
+		t.Fatalf("failed to save to storage: %v", err)
+	}
+
+	// Stored ID in our implementation is the SkillName (folder name)
+	stored := storage.StoredSkill{
+		ID: "test-skill",
+		Metadata: storage.StoredMetadata{
+			SkillName: "test-skill",
+		},
+	}
+
+	cmd := m.installFromStorageAndSyncCmd(stored)
+	msg := cmd()
+
+	if sr, ok := msg.(syncReportMsg); ok {
+		if sr.err != nil {
+			t.Logf("syncReportMsg failed (expected in temp dir): %v", sr.err)
+		}
+	} else {
+		t.Errorf("expected syncReportMsg, got %T: %v", msg, msg)
+	}
+
+	// Check if file was created
+	skillPath := filepath.Join(tmpDir, ".agents", "skills", "test-skill", "SKILL.md")
+	content, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Errorf("expected file to be created at %s, but got error: %v", skillPath, err)
+	}
+	if !strings.Contains(string(content), skillContent) {
+		t.Errorf("expected file content to contain %q, got %q", skillContent, string(content))
+	}
+
+	// Check msg (syncReportMsg)
+	// We expect syncReportMsg because m.startSync() returns it.
+	// However, m.startSync() in current implementation points to a real script.
+	// We might get an error because sync.sh doesn't exist in temp dir.
+	if _, ok := msg.(syncReportMsg); !ok {
+		t.Errorf("expected syncReportMsg, got %T", msg)
+	}
+}
+
 func TestResizeMarkdownReflow(t *testing.T) {
-	m := NewModel()
+	m := NewModel(NewBackend(storage.NewService("")))
 	m.Screen = ScreenList
 	m.Width = 100
 	m.Height = 50
-	
+
 	s1 := types.Skill{Name: "S", RawBody: "# Long Markdown\nThis is a long sentence that should wrap differently at different widths."}
-	m.list.SetItems([]list.Item{item{skill: s1}})
-	m.updatePreview()
+	m.List.list.SetItems([]list.Item{item{skill: s1}})
+	m.List.updatePreview()
 
 	// Initial render
 	msg1 := tea.WindowSizeMsg{Width: 100, Height: 50}
 	newModel1, _ := m.Update(msg1)
 	m1 := newModel1.(Model)
-	content1 := m1.viewport.View()
+	content1 := m1.List.viewport.View()
 
 	// Resize
 	msg2 := tea.WindowSizeMsg{Width: 50, Height: 50}
 	newModel2, _ := m1.Update(msg2)
 	m2 := newModel2.(Model)
-	content2 := m2.viewport.View()
+	content2 := m2.List.viewport.View()
 
 	if content1 == content2 {
 		t.Error("expected markdown to reflow on resize, but content is identical")
@@ -202,43 +284,43 @@ func TestResizeMarkdownReflow(t *testing.T) {
 }
 
 func TestViewportScrollInList(t *testing.T) {
-	m := NewModel()
+	m := NewModel(NewBackend(storage.NewService("")))
 	m.Screen = ScreenList
 	m.Width = 100
 	m.Height = 20
-	
-	s1 := types.Skill{Name: "S", RawBody: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10"}
-	m.list.SetItems([]list.Item{item{skill: s1}})
-	m.updatePreview()
-	m.viewport.Height = 3 // Small viewport to force scroll
 
-	initialOffset := m.viewport.YOffset
+	s1 := types.Skill{Name: "S", RawBody: "Line 1\nLine 2\nLine 3\nLine 4\nLine 5\nLine 6\nLine 7\nLine 8\nLine 9\nLine 10"}
+	m.List.list.SetItems([]list.Item{item{skill: s1}})
+	m.List.updatePreview()
+	m.List.viewport.Height = 3 // Small viewport to force scroll
+
+	initialOffset := m.List.viewport.YOffset
 
 	// Send pgdown
 	msg := tea.KeyMsg{Type: tea.KeyPgDown}
 	newModel, _ := m.Update(msg)
 	m = newModel.(Model)
 
-	if m.viewport.YOffset <= initialOffset {
-		t.Errorf("expected viewport to scroll down, offset %d stays <= %d", m.viewport.YOffset, initialOffset)
+	if m.List.viewport.YOffset <= initialOffset {
+		t.Errorf("expected viewport to scroll down, offset %d stays <= %d", m.List.viewport.YOffset, initialOffset)
 	}
-	
-	if m.list.Index() != 0 {
+
+	if m.List.list.Index() != 0 {
 		t.Error("list selection changed when it should only scroll viewport")
 	}
 }
 
 func TestLoadSkills_VirtualInjection(t *testing.T) {
 	// Setup: Create agents.md in root
-	m := NewModel()
+	m := NewModel(NewBackend(storage.NewService("")))
 	m.rootPath = "../../.." // relative to internal/ui
-	
+
 	// We need to mock the filesystem or just rely on actual file for this run
 	// Since I'm in the real environment, I'll check if it exists
 	t.Run("injects virtual skill if agents.md exists", func(t *testing.T) {
 		cmd := m.loadSkills()
 		msg := cmd()
-		
+
 		skills, ok := msg.(skillsLoadedMsg)
 		if !ok {
 			t.Fatalf("expected skillsLoadedMsg, got %T", msg)
@@ -254,7 +336,7 @@ func TestLoadSkills_VirtualInjection(t *testing.T) {
 				break
 			}
 		}
-		
+
 		if !found {
 			t.Error("virtual:agents skill not found in loaded skills")
 		}
@@ -296,10 +378,11 @@ func TestHandleListKeys_Matrix(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel()
+			m := NewModel(NewBackend(storage.NewService("")))
 			m.Screen = ScreenList
 			s1 := types.Skill{Name: "S", RawBody: "Body 1"}
-			m.list.SetItems([]list.Item{item{skill: s1}})
+			m.List.list.SetItems([]list.Item{item{skill: s1}})
+			m.List.selected = &s1
 
 			msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tt.key)}
 			if tt.key == "enter" {
@@ -321,38 +404,38 @@ func TestHandleListKeys_Matrix(t *testing.T) {
 
 func TestHandleDetailKeys_ReadOnly(t *testing.T) {
 	tests := []struct {
-		name        string
-		skillID     string
-		key         string
-		expectCmd   bool
+		name         string
+		skillID      string
+		key          string
+		expectCmd    bool
 		expectScreen Screen
 	}{
 		{
-			name:        "Virtual skill blocks ctrl+s",
-			skillID:     "virtual:agents",
-			key:         "ctrl+s",
-			expectCmd:   false,
+			name:         "Virtual skill blocks ctrl+s",
+			skillID:      "virtual:agents",
+			key:          "ctrl+s",
+			expectCmd:    false,
 			expectScreen: ScreenDetail,
 		},
 		{
-			name:        "Normal skill allows ctrl+s",
-			skillID:     "normal:skill",
-			key:         "ctrl+s",
-			expectCmd:   true,
+			name:         "Normal skill allows ctrl+s",
+			skillID:      "normal:skill",
+			key:          "ctrl+s",
+			expectCmd:    true,
 			expectScreen: ScreenDetail,
 		},
 		{
-			name:        "Esc returns to PrevScreen",
-			skillID:     "virtual:agents",
-			key:         "esc",
-			expectCmd:   false,
+			name:         "Esc returns to PrevScreen",
+			skillID:      "virtual:agents",
+			key:          "esc",
+			expectCmd:    false,
 			expectScreen: ScreenList,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			m := NewModel()
+			m := NewModel(NewBackend(storage.NewService("")))
 			m.Screen = ScreenDetail
 			m.PrevScreen = ScreenList
 			s := &types.Skill{ID: tt.skillID, Name: "Test Skill"}
@@ -380,7 +463,7 @@ func TestHandleDetailKeys_ReadOnly(t *testing.T) {
 }
 
 func TestInstallFailurePath(t *testing.T) {
-	m := NewModel()
+	m := NewModel(NewBackend(storage.NewService("")))
 	m.Screen = ScreenSyncing
 	m.syncOutput = "Running..."
 
@@ -404,5 +487,25 @@ func TestInstallFailurePath(t *testing.T) {
 	m = res.(Model)
 	if m.Screen != ScreenHome {
 		t.Errorf("expected navigation to ScreenHome on esc from error, got %v", m.Screen)
+	}
+}
+
+func TestHandleInstallerKeys_ToggleMode(t *testing.T) {
+	m := NewModel(NewBackend(storage.NewService("")))
+	m.Screen = ScreenInstaller
+	initialMode := m.Installer.Mode
+
+	// Toggle once
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = newModel.(Model)
+	if m.Installer.Mode == initialMode {
+		t.Errorf("expected Installer.Mode to toggle, got %v", m.Installer.Mode)
+	}
+
+	// Toggle back
+	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("M")})
+	m = newModel.(Model)
+	if m.Installer.Mode != initialMode {
+		t.Errorf("expected Installer.Mode to toggle back, got %v", m.Installer.Mode)
 	}
 }

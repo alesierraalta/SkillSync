@@ -24,7 +24,7 @@ func (m Model) View() string {
 
 	case ScreenList:
 
-		content = m.splitView()
+		content = m.List.View()
 
 	case ScreenDetail:
 
@@ -40,7 +40,7 @@ func (m Model) View() string {
 
 	case ScreenInstaller:
 
-		content = m.splitInstallerView()
+		content = m.Installer.View()
 
 	case ScreenStorage:
 
@@ -120,24 +120,7 @@ func (m Model) homeView() string {
 }
 
 func (m Model) splitView() string {
-	listWidth := int(float64(m.Width) * 0.4)
-	previewWidth := m.Width - listWidth
-
-	var searchBar string
-	if m.searchFocused {
-		searchBar = searchBarFocused.Width(listWidth - 2).Render(m.searchInput.View())
-	} else {
-		searchBar = searchBarBlurred.Width(listWidth - 2).Render(m.searchInput.View())
-	}
-
-	leftViewItems := []string{searchBar, m.list.View()}
-
-	leftView := lipgloss.JoinVertical(lipgloss.Left, leftViewItems...)
-
-	left := listStyle.Width(listWidth).Render(leftView)
-	right := viewportStyle.Width(previewWidth).Render(m.viewport.View())
-
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+	return m.List.View()
 }
 
 func (m Model) detailView() string {
@@ -232,194 +215,8 @@ func (m Model) contentView() string {
 
 	header := titleStyle.Render(fmt.Sprintf("Content: %s", m.selected.Name))
 
-	return header + "\n\n" + m.viewport.View()
+	return header + "\n\n" + m.List.viewport.View()
 
-}
-
-func (m Model) splitInstallerView() string {
-	listWidth := int(float64(m.Width) * 0.5)
-	previewWidth := m.Width - listWidth
-
-	// Task 4.1: Height fallback
-	if m.Height < 24 {
-		cardStyle = cardStyle.Border(lipgloss.NormalBorder()).MarginBottom(0)
-	} else {
-		cardStyle = cardStyle.Border(lipgloss.RoundedBorder()).MarginBottom(1)
-	}
-
-	left := lipgloss.NewStyle().Width(listWidth).PaddingRight(2).Render(m.installerOptionsView())
-	right := viewportStyle.Width(previewWidth).PaddingLeft(2).Render(m.installerPreviewView())
-
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
-}
-
-func (m Model) renderCard(title, content string, width int) string {
-	styledTitle := cardTitleStyle.Render(title)
-	return cardStyle.Width(width).Render(
-		lipgloss.JoinVertical(lipgloss.Left,
-			styledTitle,
-			content,
-		),
-	)
-}
-
-func (m Model) installerOptionsView() string {
-	width := int(float64(m.Width)*0.5) - 4
-
-	// Header
-	banner := bannerStyle.Render("SYNCK INSTALLER")
-	pathInfo := fmt.Sprintf("Target: %s", m.rootPath)
-	header := lipgloss.JoinVertical(lipgloss.Left, banner, pathInfo)
-
-	recommendedCheck := checkmarkStyle.Render("[x]")
-	advancedCheck := "[ ]"
-	if m.installerMode {
-		recommendedCheck = "[ ]"
-		advancedCheck = checkmarkStyle.Render("[x]")
-	}
-	modeStr := fmt.Sprintf("Mode (M to toggle):\n  %s Recommended\n      Use one shared install everywhere\n  %s Advanced\n      Create an isolated copy here", recommendedCheck, advancedCheck)
-	header += "\n" + modeStr + "\n\n"
-
-	// Providers
-	var providersView string
-	providers := []string{"Claude Code", "Gemini CLI", "Codex (OpenAI)", "GitHub Copilot", "OpenCode (OPENCODE.MD)"}
-	for i, p := range providers {
-		cursor := "  "
-		if m.installerCursor == i {
-			cursor = "> "
-		}
-		check := "[ ]"
-		if m.installerProviders[i] {
-			check = checkmarkStyle.Render("[x]")
-		}
-		providersView += fmt.Sprintf("%s%s %s\n", cursor, check, p)
-
-		// Task 3.2: Hint for OpenCode
-		if i == 4 && m.installerCursor == 4 {
-			providersView += hintStyle.Render("    Effect: Synced AGENTS.md -> OPENCODE.MD") + "\n"
-		}
-	}
-	providersCard := m.renderCard("[1] SELECT AI PROVIDERS", providersView, width)
-
-	// Skills
-	var skillsView string
-	skills := []string{"skill-creator", "skill-sync", "find-skills"}
-	for i, sk := range skills {
-		cursor := "  "
-		if m.installerCursor == i+5 {
-			cursor = "> "
-		}
-		check := "[ ]"
-		if m.installerSkills[i] {
-			check = checkmarkStyle.Render("[x]")
-		}
-		skillsView += fmt.Sprintf("%s%s %s\n", cursor, check, sk)
-	}
-	skillsCard := m.renderCard("[2] INSTALL CORE SKILLS", skillsView, width)
-
-	// Storage
-	var storageView string
-	for i, sk := range m.storedSkills {
-		cursor := "  "
-		if m.installerCursor == i+8 {
-			cursor = "> "
-		}
-		check := "[ ]"
-		if i < len(m.installerStoredSkills) && m.installerStoredSkills[i] {
-			check = checkmarkStyle.Render("[x]")
-		}
-		storageView += fmt.Sprintf("%s%s %s\n", cursor, check, sk.Metadata.SkillName)
-	}
-	storageCard := m.renderCard("[3] INSTALL FROM STORAGE", storageView, width)
-
-	// Global & Action
-	var footer string
-	storageOffset := len(m.storedSkills)
-
-	cursorGlobal := "  "
-	if m.installerCursor == 8+storageOffset {
-		cursorGlobal = "> "
-	}
-	checkGlobal := "[ ]"
-	if m.installerGlobal {
-		checkGlobal = checkmarkStyle.Render("[x]")
-	}
-	footer += fmt.Sprintf("%s%s Add shell aliases to profile\n", cursorGlobal, checkGlobal)
-
-	cursorAction := "  "
-	if m.installerCursor == 9+storageOffset {
-		cursorAction = "> "
-	}
-	footer += fmt.Sprintf("\n%s[ Execute Install ]\n", cursorAction)
-
-	return lipgloss.JoinVertical(lipgloss.Left,
-		header,
-		providersCard,
-		skillsCard,
-		storageCard,
-		footer,
-	)
-}
-
-func (m Model) installerPreviewView() string {
-	width := m.Width - int(float64(m.Width)*0.5) - 4
-
-	var content string
-
-	// Directories
-	content += lipgloss.NewStyle().Bold(true).Render("DIRECTORIES TO CREATE:") + "\n"
-	if m.installerProviders[0] {
-		content += "  + .claude/skills/\n"
-	}
-	if m.installerProviders[1] {
-		content += "  + .gemini/skills/\n"
-	}
-	if m.installerProviders[2] {
-		content += "  + .codex/skills/\n"
-	}
-	if m.installerProviders[3] {
-		content += "  + .github/\n"
-	}
-	if m.installerProviders[4] {
-		content += "  + .opencode/skills/\n"
-	}
-	content += "\n"
-
-	// Skills
-	content += lipgloss.NewStyle().Bold(true).Render("SKILLS TO COPY/LINK:") + "\n"
-	if m.installerSkills[0] {
-		content += "  + skill-creator -> .agent/skills/skill-creator\n"
-	}
-	if m.installerSkills[1] {
-		content += "  + skill-sync    -> .agent/skills/skill-sync\n"
-	}
-	if m.installerSkills[2] {
-		content += "  + find-skills   -> .agent/skills/find-skills\n"
-	}
-	content += "\n"
-
-	// Configs
-	content += lipgloss.NewStyle().Bold(true).Render("CONFIG FILES TO SYNC:") + "\n"
-	if m.installerProviders[0] {
-		content += "  + AGENTS.md -> CLAUDE.md\n"
-	}
-	if m.installerProviders[1] {
-		content += "  + AGENTS.md -> GEMINI.md\n"
-	}
-	if m.installerProviders[3] {
-		content += "  + AGENTS.md -> .github/copilot-instructions.md\n"
-	}
-	if m.installerProviders[4] {
-		content += "  + AGENTS.md -> OPENCODE.MD\n"
-	}
-	content += "\n"
-
-	if m.installerGlobal {
-		content += lipgloss.NewStyle().Bold(true).Render("GLOBAL ALIASES:") + "\n"
-		content += "  + Injecting 4 aliases into shell profile\n"
-	}
-
-	return m.renderCard("📋 INSTALLATION PREVIEW", content, width)
 }
 
 func (m Model) storageView() string {

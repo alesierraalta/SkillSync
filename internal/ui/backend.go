@@ -1,7 +1,13 @@
 package ui
 
 import (
+	"bytes"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"skillsync/tui/internal/coreskills"
 	"skillsync/tui/internal/discovery"
+	"skillsync/tui/internal/opencode"
 	"skillsync/tui/internal/parser"
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
@@ -25,6 +31,11 @@ type AppService interface {
 	GetProjects() ([]storage.ProjectInfo, error)
 	SaveToStorage(skill *types.Skill, metadata storage.StoredMetadata) error
 	LoadFromStorage(id string) (string, error)
+
+	InstallCoreSkill(name string) error
+	RegisterOpenCodeTools() error
+	RegisterSkillManagerAgent() error
+	EnsureAgentsMD() error
 }
 
 // Backend implements AppService using concrete implementations.
@@ -36,6 +47,24 @@ func NewBackend(storageService *storage.Service) *Backend {
 	return &Backend{
 		storage: storageService,
 	}
+}
+
+// RegisterOpenCodeTools preserves the package-level API used by the CLI while
+// routing the behavior through the AppService implementation.
+func RegisterOpenCodeTools() error {
+	return NewBackend(storage.NewService("")).RegisterOpenCodeTools()
+}
+
+// InstallCoreSkill preserves the package-level API used by the CLI while
+// routing the behavior through the AppService implementation.
+func InstallCoreSkill(name string) error {
+	return NewBackend(storage.NewService("")).InstallCoreSkill(name)
+}
+
+// RegisterSkillManagerAgent preserves the package-level API used by the CLI
+// while routing the behavior through the AppService implementation.
+func RegisterSkillManagerAgent() error {
+	return NewBackend(storage.NewService("")).RegisterSkillManagerAgent()
 }
 
 func (b *Backend) DiscoverSkills(rootPath string) ([]string, error) {
@@ -85,4 +114,210 @@ func (b *Backend) SaveToStorage(skill *types.Skill, metadata storage.StoredMetad
 
 func (b *Backend) LoadFromStorage(id string) (string, error) {
 	return b.storage.Load(id)
+}
+
+func (b *Backend) InstallCoreSkill(name string) error {
+	if name == "skill-sync" {
+		if err := b.installCoreSharedLib(); err != nil {
+			return err
+		}
+	}
+
+	srcDir := "skills/" + name
+	providers := b.activeProviders()
+	if len(providers) == 0 {
+		// Fallback: install to default .agents only
+		providers = []string{".agents/skills"}
+	}
+
+	for _, destBase := range providers {
+		destDir := filepath.Join(destBase, name)
+		if err := os.MkdirAll(destDir, 0755); err != nil {
+			return err
+		}
+
+		if err := fs.WalkDir(coreskills.EmbeddedSkills, srcDir, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			relPath, err := filepath.Rel(srcDir, path)
+			if err != nil {
+				return err
+			}
+
+			targetPath := filepath.Join(destDir, relPath)
+
+			if d.IsDir() {
+				return os.MkdirAll(targetPath, 0755)
+			}
+
+			data, err := coreskills.EmbeddedSkills.ReadFile(path)
+			if err != nil {
+				return err
+			}
+
+			if filepath.Ext(path) == ".sh" {
+				data = b.ensureLF(data)
+			}
+
+			return os.WriteFile(targetPath, data, 0644)
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *Backend) installCoreSharedLib() error {
+	libDir := filepath.Join(".agents", "skills", "lib")
+	if err := os.MkdirAll(libDir, 0755); err != nil {
+		return err
+	}
+	utilsPath := filepath.Join(libDir, "utils.sh")
+
+	embedded, err := coreskills.EmbeddedSkills.ReadFile("skills/lib/utils.sh")
+	if err != nil {
+		return err
+	}
+	embedded = b.ensureLF(embedded)
+
+	existing, err := os.ReadFile(utilsPath)
+	if err != nil {
+		return os.WriteFile(utilsPath, embedded, 0644)
+	}
+
+	if bytes.Equal(existing, embedded) {
+		return nil
+	}
+
+	repaired := b.ensureLF(existing)
+	if bytes.Equal(existing, repaired) {
+		return nil
+	}
+
+	return os.WriteFile(utilsPath, repaired, 0644)
+}
+
+func (b *Backend) activeProviders() []string {
+	providers := []string{
+		".agents/skills",
+		".opencode/skills",
+		".claude/skills",
+		".gemini/skills",
+		".cursor/skills",
+		".copilot/skills",
+		".qwen/skills",
+	}
+	var active []string
+	for _, p := range providers {
+		if info, err := os.Stat(p); err == nil && info.IsDir() {
+			active = append(active, p)
+		}
+	}
+	return active
+}
+
+func (b *Backend) ensureLF(data []byte) []byte {
+	return bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+}
+
+func (b *Backend) RegisterOpenCodeTools() error {
+	// Sync skills first
+	if _, err := opencode.SyncSkills(".", opencode.Options{}); err != nil {
+		// Non-fatal: continue with tool registration even if sync fails
+	}
+
+	// Parse mirrored skills
+	skills, err := b.parseMirroredSkillsForEcosystem()
+	if err != nil {
+		return err
+	}
+
+	// Add 5 base commands as pseudo-skills
+	baseSkills := b.getBaseCommandSkills()
+	skills = append(baseSkills, skills...)
+
+	if _, err := opencode.RegenerateTools(".", skills, false); err != nil {
+		return err
+	}
+
+	_, err = opencode.RegenerateCommands(".", skills, false)
+	return err
+}
+
+func (b *Backend) parseMirroredSkillsForEcosystem() ([]types.Skill, error) {
+	skillsPath := filepath.Join(".", ".opencode", "skills")
+	var skillPaths []string
+	err := filepath.WalkDir(skillsPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			skillFile := filepath.Join(path, "SKILL.md")
+			if _, err := os.Stat(skillFile); err == nil {
+				skillPaths = append(skillPaths, skillFile)
+				return filepath.SkipDir
+			}
+		}
+		return nil
+	})
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+
+	var skills []types.Skill
+	for _, p := range skillPaths {
+		skill, err := b.parseSkill(p)
+		if err != nil {
+			continue
+		}
+		skills = append(skills, *skill)
+	}
+	return skills, nil
+}
+
+func (b *Backend) parseSkill(path string) (*types.Skill, error) {
+	return parser.Parse(path)
+}
+
+func (b *Backend) getBaseCommandSkills() []types.Skill {
+	return []types.Skill{
+		{Name: "skill", Metadata: types.Metadata{Description: "Entry point for skill management", AutoInvoke: true}},
+		{Name: "find", Metadata: types.Metadata{Description: "Search and list existing skills", AutoInvoke: true}},
+		{Name: "create", Metadata: types.Metadata{Description: "Create a new agent skill from a prompt", AutoInvoke: true}},
+		{Name: "sync", Metadata: types.Metadata{Description: "Synchronize skills and update AGENTS.md/OPENCODE.md", AutoInvoke: true}},
+		{Name: "fullskills", Metadata: types.Metadata{Description: "Complete skill workflow", AutoInvoke: true}},
+	}
+}
+
+func (b *Backend) RegisterSkillManagerAgent() error {
+	// Sync skills first (non-fatal)
+	opencode.SyncSkills(".", opencode.Options{})
+
+	// Parse mirrored skills
+	skills, err := b.parseMirroredSkillsForEcosystem()
+	if err != nil {
+		return err
+	}
+
+	// Add base command skills
+	baseSkills := b.getBaseCommandSkills()
+	skills = append(baseSkills, skills...)
+
+	_, err = opencode.RegenerateAgent(".", skills, false)
+	return err
+}
+
+func (b *Backend) EnsureAgentsMD() error {
+	agentsFile := "AGENTS.md"
+	if _, err := os.Stat(agentsFile); os.IsNotExist(err) {
+		content := []byte("# Agent Skills\n\nThis document lists the AI skills available in the project.\n\n## Available Skills\n\n| Skill | Description | Location |\n| ----- | ----------- | -------- |\n")
+		return os.WriteFile(agentsFile, content, 0644)
+	}
+	return nil
 }

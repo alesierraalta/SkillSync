@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
@@ -81,46 +80,48 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case skillsLoadedMsg:
-		var items []list.Item
-		seen := make(map[string]bool)
-		for _, s := range msg {
-			// Deduplicate by path so same skill from different environments show up
-			if !seen[s.Path] {
-				items = append(items, item{skill: s})
-				seen[s.Path] = true
-			}
-		}
-		m.allSkills = items
-		cmd = m.list.SetItems(items)
+		newModel, cmd := m.List.Update(msg)
+		m.List = newModel.(ListModel)
 		return m, cmd
 
 	case tea.WindowSizeMsg:
 		m.Width = msg.Width
 		m.Height = msg.Height
 
+		m.Installer.Width = m.Width
+		m.Installer.Height = m.Height
+		m.List.Width = m.Width
+		m.List.Height = m.Height
+
 		listWidth := int(float64(m.Width) * 0.4)
 		previewWidth := m.Width - listWidth
 
 		searchBarHeight := 3
-		m.list.SetSize(listWidth, m.Height-searchBarHeight-2)
-		m.viewport.Width = previewWidth
-		m.viewport.Height = m.Height - 2
-
-		if m.Screen == ScreenContentView {
-			m.viewport.Width = m.Width
-			m.viewport.Height = m.Height - 6
-		}
+		m.List.list.SetSize(listWidth, m.Height-searchBarHeight-2)
+		m.List.viewport.Width = previewWidth
+		m.List.viewport.Height = m.Height - 2
 
 		m.storageList.SetSize(m.Width-4, m.Height-8)
 		m.projectList.SetSize(m.Width-4, m.Height-8)
-
-		// Force re-render of preview to reflow markdown
-		m.updatePreview()
 
 		return m, nil
 
 	case tea.KeyMsg:
 		return m.handleKeyPress(msg)
+
+	case editRequestMsg:
+		m.selected = msg.Skill
+		m.PrevScreen = m.Screen
+		m.Screen = ScreenDetail
+		m.setupInputs()
+		return m, nil
+
+	case syncRequestMsg:
+		m.PrevScreen = m.Screen
+		m.Screen = ScreenSyncing
+		m.SyncFailed = false
+		m.syncOutput = "Preparando instalación..."
+		return m, runInstallerCmd(m)
 
 	case runner.SyncResult:
 		m.SyncFinished = true
@@ -166,7 +167,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		cmd = m.storageList.SetItems(items)
 		if m.Screen == ScreenInstaller {
-			m.installerStoredSkills = make([]bool, len(msg))
+			m.Installer.AllStored = m.storedSkills
+			m.Installer.StoredSkills = make([]bool, len(msg))
 		}
 		return m, cmd
 
@@ -180,7 +182,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case statusMsg:
 		if m.Screen == ScreenList {
-			cmd = m.list.NewStatusMessage(string(msg))
+			cmd = m.List.list.NewStatusMessage(string(msg))
 			return m, cmd
 		}
 		m.StatusMsg = string(msg)
@@ -253,8 +255,10 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter", " ":
 		if m.HomeCursor == 0 {
 			m.Screen = ScreenInstaller
-			m.installerCursor = 0
-			return m, nil
+			m.Installer.Cursor = 0
+			m.Installer.AllStored = m.storedSkills
+			m.Installer.StoredSkills = make([]bool, len(m.storedSkills))
+			return m, m.loadStoredSkillsCmd()
 		} else if m.HomeCursor == 1 {
 			m.Screen = ScreenList
 			return m, m.loadSkills()
@@ -271,8 +275,10 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "1":
 		m.HomeCursor = 0
 		m.Screen = ScreenInstaller
-		m.installerCursor = 0
-		return m, nil
+		m.Installer.Cursor = 0
+		m.Installer.AllStored = m.storedSkills
+		m.Installer.StoredSkills = make([]bool, len(m.storedSkills))
+		return m, m.loadStoredSkillsCmd()
 	case "2":
 		m.HomeCursor = 1
 		m.Screen = ScreenList
@@ -297,72 +303,49 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) syncOpenCodeCmd() tea.Cmd {
 	return func() tea.Msg {
-		err := RegisterOpenCodeTools()
+		err := m.backend.RegisterOpenCodeTools()
 		return syncFinishedMsg{err: err}
 	}
 }
 
 func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.searchFocused {
-		switch msg.String() {
-		case "esc", "tab":
-			m.searchFocused = false
-			m.searchInput.Blur()
-			return m, nil
-		}
+	newModel, cmd := m.List.Update(msg)
+	m.List = newModel.(ListModel)
 
-		var cmd tea.Cmd
-		m.searchInput, cmd = m.searchInput.Update(msg)
-		m.filterSkills(m.searchInput.Value())
-		return m, cmd
+	// Coordination logic
+	if m.List.selected != nil {
+		m.selected = m.List.selected
 	}
 
 	switch msg.String() {
-	case "tab":
-		m.searchFocused = true
-		return m, m.searchInput.Focus()
 	case "enter", "v":
-		if i, ok := m.list.SelectedItem().(item); ok {
-			m.selected = &i.skill
+		if m.List.selected != nil {
 			m.PrevScreen = m.Screen
 			m.Screen = ScreenContentView
-			m.viewport.Width = m.Width
-			m.viewport.Height = m.Height - 6
-			m.updatePreview()
-			return m, nil
+			m.List.Width = m.Width
+			m.List.Height = m.Height
+			m.List.viewport.Width = m.Width
+			m.List.viewport.Height = m.Height - 6
+			return m, cmd
 		}
 	case "e":
-		if i, ok := m.list.SelectedItem().(item); ok {
-			m.selected = &i.skill
+		if m.List.selected != nil {
 			m.PrevScreen = m.Screen
 			m.Screen = ScreenDetail
 			m.setupInputs()
-			return m, nil
+			return m, cmd
 		}
 	case "y":
 		m.PrevScreen = m.Screen
 		m.Screen = ScreenSyncing
 		m.SyncFailed = false
+		m.SyncFinished = false
 		return m, m.startSync()
 	case "s":
 		return m, m.saveToStorageCmd()
 	case "esc":
 		m.Screen = ScreenHome
-		m.HomeCursor = 0
 		return m, nil
-	case "pgup", "pgdown":
-		var cmd tea.Cmd
-		m.viewport, cmd = m.viewport.Update(msg)
-		return m, cmd
-	}
-
-	var cmd tea.Cmd
-	m.list, cmd = m.list.Update(msg)
-
-	if i, ok := m.list.SelectedItem().(item); ok {
-		if i.skill.ID != m.lastSelectedID {
-			m.updatePreview()
-		}
 	}
 
 	return m, cmd
@@ -444,65 +427,47 @@ func (m Model) handleContentViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setupInputs()
 			return m, nil
 		}
+	case "j", "k", "up", "down", "pgup", "pgdown":
+		var cmd tea.Cmd
+		m.List.viewport, cmd = m.List.viewport.Update(msg)
+		return m, cmd
 	}
 
-	var cmd tea.Cmd
-	m.viewport, cmd = m.viewport.Update(msg)
+	newModel, cmd := m.List.Update(msg)
+	m.List = newModel.(ListModel)
+
+	// Sync header if list selection changed
+	if i, ok := m.List.list.SelectedItem().(item); ok {
+		m.selected = &i.skill
+	}
+
 	return m, cmd
 }
 
 func (m Model) handleInstallerKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc", "q":
+	if msg.String() == "esc" || msg.String() == "q" {
 		m.Screen = ScreenHome
 		return m, nil
-	case "up", "k":
-		if m.installerCursor > 0 {
-			m.installerCursor--
-		}
-	case "down", "j":
-		if m.installerCursor < 9+len(m.storedSkills) {
-			m.installerCursor++
-		}
-	case "m", "M":
-		m.installerMode = !m.installerMode
-	case "space", "enter":
-		storageOffset := len(m.storedSkills)
-		if m.installerCursor >= 0 && m.installerCursor < 5 {
-			m.installerProviders[m.installerCursor] = !m.installerProviders[m.installerCursor]
-		} else if m.installerCursor >= 5 && m.installerCursor < 8 {
-			m.installerSkills[m.installerCursor-5] = !m.installerSkills[m.installerCursor-5]
-		} else if m.installerCursor >= 8 && m.installerCursor < 8+storageOffset {
-			idx := m.installerCursor - 8
-			if idx < len(m.installerStoredSkills) {
-				m.installerStoredSkills[idx] = !m.installerStoredSkills[idx]
-			}
-		} else if m.installerCursor == 8+storageOffset {
-			m.installerGlobal = !m.installerGlobal
-		} else if m.installerCursor == 9+storageOffset && msg.String() == "enter" {
-			// Execute install
-			m.PrevScreen = m.Screen
-			m.Screen = ScreenSyncing
-			m.SyncFailed = false
-			m.syncOutput = "Preparando instalación..."
-			return m, runInstallerCmd(m)
-		}
 	}
-	return m, nil
+
+	newInstaller, cmd := m.Installer.Update(msg)
+	m.Installer = newInstaller.(InstallerModel)
+	return m, cmd
 }
 
 func (m Model) handleComponentUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch m.Screen {
-	case ScreenList:
-		m.list, cmd = m.list.Update(msg)
+	case ScreenList, ScreenContentView:
+		newModel, cmd := m.List.Update(msg)
+		m.List = newModel.(ListModel)
+		return m, cmd
 	case ScreenDetail:
 		for i := range m.inputs {
 			m.inputs[i], cmd = m.inputs[i].Update(msg)
 		}
-	case ScreenContentView:
-		m.viewport, cmd = m.viewport.Update(msg)
 	case ScreenStorage:
+
 		m.storageList, cmd = m.storageList.Update(msg)
 	case ScreenProjects:
 		m.projectList, cmd = m.projectList.Update(msg)
@@ -610,8 +575,8 @@ func (m *Model) setupInputs() {
 func (m Model) startSync() tea.Cmd {
 	return func() tea.Msg {
 		// Ensure core shared library and AGENTS.md exist before syncing
-		_ = installCoreSharedLib()
-		_ = ensureAgentsMD()
+		_ = m.backend.InstallCoreSkill("skill-sync")
+		_ = m.backend.EnsureAgentsMD()
 
 		opts := syncengine.SyncOptions{
 			DryRun: false,
@@ -653,7 +618,7 @@ func (m Model) loadProjectsCmd() tea.Cmd {
 func (m Model) saveToStorageCmd() tea.Cmd {
 	target := m.selected
 	if target == nil {
-		if i, ok := m.list.SelectedItem().(item); ok {
+		if i, ok := m.List.list.SelectedItem().(item); ok {
 			target = &i.skill
 		}
 	}
@@ -692,6 +657,7 @@ func (m Model) handleStorageKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.PrevScreen = m.Screen
 			m.Screen = ScreenSyncing
 			m.SyncFailed = false
+			m.SyncFinished = false
 			return m, m.installFromStorageAndSyncCmd(itm.stored)
 		}
 	}
@@ -750,18 +716,5 @@ func (m Model) installFromStorageAndSyncCmd(stored storage.StoredSkill) tea.Cmd 
 }
 
 func (m *Model) filterSkills(query string) {
-	if query == "" {
-		m.list.SetItems(m.allSkills)
-		return
-	}
-	q := strings.ToLower(query)
-	var filtered []list.Item
-	for _, it := range m.allSkills {
-		if itm, ok := it.(item); ok {
-			if strings.Contains(strings.ToLower(itm.FilterValue()), q) {
-				filtered = append(filtered, it)
-			}
-		}
-	}
-	m.list.SetItems(filtered)
+	m.List.filterSkills(query)
 }

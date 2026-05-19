@@ -1,0 +1,57 @@
+{
+	"mcp": {
+		"context-mode": {
+			"command": [
+				"context-mode"
+			],
+			"type": "local"
+		},
+		"context7": {
+			"enabled": true,
+			"type": "remote",
+			"url": "https://mcp.context7.com/mcp"
+		},
+		"engram": {
+			"command": [
+				"C:\\Users\\ismar\\AppData\\Local\\engram\\bin\\engram.exe",
+				"mcp",
+				"--tools=agent"
+			],
+			"type": "local"
+		},
+		"sequential-thinking": {
+			"command": [
+				"npx",
+				"-y",
+				"@modelcontextprotocol/server-sequential-thinking"
+			],
+			"type": "local"
+		},
+		"serena": {
+			"command": [
+				"serena",
+				"start-mcp-server"
+			],
+			"type": "local"
+		}
+	},
+	"subagents": {
+		"agentOverrides": {
+			"reviewer": {
+				"model": "opencode-go/qwen3.6-plus"
+			},
+			"context-builder": {
+				"model": "gemini-acp/gemini-3.1-pro-preview"
+			},
+			"planner": {
+				"model": "openai-codex/gpt-5.5"
+			},
+			"scout": {
+				"model": "gemini-acp/gemini-3-flash-preview"
+			},
+			"worker": {
+				"model": "gemini-acp/gemini-3-flash-preview"
+			}
+		}
+	}
+}

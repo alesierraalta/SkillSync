@@ -3,7 +3,7 @@ package ui
 import (
 	"os"
 	"path/filepath"
-	"skillsync/tui/internal/runner"
+	"skillsync/tui/internal/storage"
 	"testing"
 )
 
@@ -22,7 +22,7 @@ func TestSyncRepairsMissingSharedLib(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(syncScriptPath), 0755); err != nil {
 		t.Fatalf("failed to create sync script dir: %v", err)
 	}
-	
+
 	// Create a dummy sync.sh that checks for utils.sh
 	dummySyncContent := `#!/bin/bash
 if [ ! -f "../../lib/utils.sh" ]; then
@@ -44,22 +44,22 @@ exit 0
 
 	// 3. Initialize Model and start sync
 	// The startSync() method uses "./.agents/skills/skill-sync/assets/sync.sh" relative to cwd
-	m := NewModel()
+	m := NewModel(NewBackend(storage.NewService("")))
 	m.Screen = ScreenSyncing
-	
+
 	cmd := m.startSync()
 	msg := cmd()
 
-	res, ok := msg.(runner.SyncResult)
+	res, ok := msg.(syncReportMsg)
 	if !ok {
-		t.Fatalf("expected runner.SyncResult, got %T", msg)
+		t.Fatalf("expected syncReportMsg, got %T", msg)
 	}
 
 	// 4. Assertions
-	// Before the fix, this should fail with ExitCode 1 and "Error: Could not find lib/utils.sh"
-	// After the fix, it should succeed (ExitCode 0) because startSync repaired it.
-	if res.ExitCode != 0 {
-		t.Errorf("Sync failed with exit code %d, stderr: %q. Expected repair and success.", res.ExitCode, res.Stderr)
+	// Before the fix, this should fail with error
+	// After the fix, it should succeed (err == nil) because startSync repaired it.
+	if res.err != nil {
+		t.Errorf("Sync failed with error: %v. Expected repair and success.", res.err)
 	}
 
 	// Verify shared lib was actually created

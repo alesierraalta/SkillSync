@@ -287,7 +287,7 @@ When performing these actions, ALWAYS invoke the corresponding skill FIRST:
                 !skip { print }
             ' "$agents_path" > "$agents_path.tmp"
             mv "$agents_path.tmp" "$agents_path"
-            echo -e "${GREEN}  ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Updated Auto-invoke section${NC}"
+            echo -e "${GREEN}  ✓ Updated Auto-invoke section${NC}"
         else
             # Try to insert after Skills Reference blockquote, otherwise append
             if grep -q "^>.*SKILL\.md)$" "$agents_path"; then
@@ -307,12 +307,12 @@ When performing these actions, ALWAYS invoke the corresponding skill FIRST:
                     { print }
                 ' "$agents_path" > "$agents_path.tmp"
                 mv "$agents_path.tmp" "$agents_path"
-                echo -e "${GREEN}  ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Inserted Auto-invoke section after Skills Reference${NC}"
+                echo -e "${GREEN}  ✓ Inserted Auto-invoke section after Skills Reference${NC}"
             else
                 echo "" >> "$agents_path"
                 cat "$section_file" >> "$agents_path"
                 echo "" >> "$agents_path"
-                echo -e "${GREEN}  ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“ Appended Auto-invoke section to end of file${NC}"
+                echo -e "${GREEN}  ✓ Appended Auto-invoke section to end of file${NC}"
             fi
         fi
 

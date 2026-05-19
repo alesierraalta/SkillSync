@@ -259,6 +259,63 @@ func TestSyncSkills_DryRunReportsNoWrite(t *testing.T) {
 	}
 }
 
+func TestSyncSkills_InvokesProgressCallback(t *testing.T) {
+	tmp := t.TempDir()
+	agentsDir := filepath.Join(tmp, ".agents", "skills")
+	opencodeSkillsDir := filepath.Join(tmp, ".opencode", "skills")
+	ensureDir(t, agentsDir)
+	ensureDir(t, opencodeSkillsDir)
+
+	fooDir := filepath.Join(agentsDir, "foo")
+	ensureDir(t, fooDir)
+	if err := os.WriteFile(filepath.Join(fooDir, "SKILL.md"), []byte("name: foo\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	orphanDir := filepath.Join(opencodeSkillsDir, "orphan")
+	ensureDir(t, orphanDir)
+	if err := os.WriteFile(filepath.Join(orphanDir, "SKILL.md"), []byte("orphan"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stages []string
+	var doneVals []int
+	var totalVals []int
+
+	_, err := SyncSkills(tmp, Options{
+		Prune: true,
+		ProgressCb: func(stage string, done, total int) {
+			stages = append(stages, stage)
+			doneVals = append(doneVals, done)
+			totalVals = append(totalVals, total)
+		},
+	})
+	if err != nil {
+		t.Fatalf("SyncSkills failed: %v", err)
+	}
+
+	expectedStages := []string{
+		"Discovering source skills",
+		"Discovering orphan destination skills",
+		"Mirroring skills",
+		"Pruning orphan skills",
+	}
+	if len(stages) != len(expectedStages) {
+		t.Fatalf("expected %d progress callbacks, got %d (%v)", len(expectedStages), len(stages), stages)
+	}
+	for i, expected := range expectedStages {
+		if stages[i] != expected {
+			t.Fatalf("stage %d mismatch: want %q got %q", i, expected, stages[i])
+		}
+		if doneVals[i] != i+1 {
+			t.Fatalf("done at stage %d mismatch: want %d got %d", i, i+1, doneVals[i])
+		}
+		if totalVals[i] != len(expectedStages) {
+			t.Fatalf("total at stage %d mismatch: want %d got %d", i, len(expectedStages), totalVals[i])
+		}
+	}
+}
+
 // ----------------------------------------------------------------
 // TestRegenerateTools_GeneratesTools — Task 1.7
 // ----------------------------------------------------------------

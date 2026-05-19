@@ -103,9 +103,9 @@ func TestNewCLICommands(t *testing.T) {
 			checkMsg: "fullskills should not trigger TUIRunner or GlobalInstaller",
 		},
 		{
-			name:    "create alias works like createskill",
+			name:    "create alias enforces strict validation",
 			args:    []string{"synck", "create", "test prompt"},
-			wantErr: false,
+			wantErr: true,
 			checkFn: func() bool { return !calledTUI && !calledGlobal },
 			checkMsg: "create should not trigger TUIRunner or GlobalInstaller",
 		},
@@ -123,6 +123,49 @@ func TestNewCLICommands(t *testing.T) {
 				t.Error(tt.checkMsg)
 			}
 		})
+	}
+}
+
+func TestCreateSkill_GeneratesPack(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	_ = os.MkdirAll(".agents", 0755)
+	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n"), 0644)
+
+	err := run([]string{"synck", "create", "Go test quality guardrails"})
+	if err != nil {
+		t.Fatalf("run(create) failed: %v", err)
+	}
+
+	skillDir := filepath.Join(".agents", "skills", "go-test-quality-guardrails")
+	for _, p := range []string{
+		filepath.Join(skillDir, "SKILL.md"),
+		filepath.Join(skillDir, "assets", "SKILL-TEMPLATE.md"),
+		filepath.Join(skillDir, "references", "README.md"),
+		filepath.Join(skillDir, "CHECKLIST.md"),
+	} {
+		if _, err := os.Stat(p); os.IsNotExist(err) {
+			t.Fatalf("expected file to exist: %s", p)
+		}
+	}
+}
+
+func TestCreateSkill_RejectsWeakPrompt(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	_ = os.MkdirAll(".agents", 0755)
+	err := run([]string{"synck", "create", "auth"})
+	if err == nil {
+		t.Fatal("expected strict validation error for weak prompt")
+	}
+	if !strings.Contains(err.Error(), "strict") {
+		t.Fatalf("expected strict validation message, got: %v", err)
 	}
 }
 
@@ -351,7 +394,7 @@ func TestMain_AutoChain(t *testing.T) {
 	// Create .agents directory so findProjectRoot works
 	_ = os.MkdirAll(".agents", 0755)
 	// Create AGENTS.md so copyAgentsMD works
-	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n"), 0644)
+	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n\n## Available Skills\n\n| Skill | Description | Location |\n| ----- | ----------- | -------- |\n\n### Auto-invoke Skills\n\nWhen performing these actions, ALWAYS invoke the corresponding skill FIRST:\n\n| Action                              | Skill      |\n| ----------------------------------- | ---------- |\n"), 0644)
 
 	// Create the sync script at the correct path (.agents/skills/skill-sync/assets/sync.sh)
 	// This is where runner.DefaultSyncPath points to
@@ -473,7 +516,7 @@ func TestHandleSync_ProgressAndReport(t *testing.T) {
 	// Set up minimal project
 	_ = os.MkdirAll(".agents/skills/foo", 0755)
 	_ = os.WriteFile(".agents/skills/foo/SKILL.md", []byte("name: foo\ndescription: Foo skill\nauto_invoke: true\n"), 0644)
-	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n\n### Auto-invoke Skills\n\nWhen performing these actions, ALWAYS invoke the corresponding skill FIRST:\n\n| Action | Skill |\n|--------|-------|\n"), 0644)
+	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n\n## Available Skills\n\n| Skill | Description | Location |\n| ----- | ----------- | -------- |\n\n### Auto-invoke Skills\n\nWhen performing these actions, ALWAYS invoke the corresponding skill FIRST:\n\n| Action                              | Skill      |\n| ----------------------------------- | ---------- |\n"), 0644)
 
 	// Capture stdout concurrently to avoid pipe buffer deadlock
 	oldStdout := os.Stdout
@@ -525,7 +568,7 @@ func TestHandleSync_NoChanges(t *testing.T) {
 
 	// Set up minimal project with no skills
 	_ = os.MkdirAll(".agents", 0755)
-	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n"), 0644)
+	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n\n## Available Skills\n\n| Skill | Description | Location |\n| ----- | ----------- | -------- |\n\n### Auto-invoke Skills\n\nWhen performing these actions, ALWAYS invoke the corresponding skill FIRST:\n\n| Action                              | Skill      |\n| ----------------------------------- | ---------- |\n"), 0644)
 
 	// First run to set everything up
 	_ = handleSync(nil)
@@ -569,8 +612,8 @@ func TestHandleSync_VerboseFlag(t *testing.T) {
 	_ = os.MkdirAll(".agents/skills/foo", 0755)
 	_ = os.WriteFile(".agents/skills/foo/SKILL.md", []byte("name: foo\ndescription: Foo skill\nauto_invoke: true\n"), 0644)
 
-	// Create AGENTS.md with auto-invoke section so it gets modified
-	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n\n### Auto-invoke Skills\n\nWhen performing these actions, ALWAYS invoke the corresponding skill FIRST:\n\n| Action | Skill |\n|--------|-------|\n"), 0644)
+	// Create AGENTS.md with required sections so it gets modified
+	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n\n## Available Skills\n\n| Skill | Description | Location |\n| ----- | ----------- | -------- |\n\n### Auto-invoke Skills\n\nWhen performing these actions, ALWAYS invoke the corresponding skill FIRST:\n\n| Action                              | Skill      |\n| ----------------------------------- | ---------- |\n"), 0644)
 
 	// Capture stdout (non-verbose) concurrently
 	oldStdout := os.Stdout

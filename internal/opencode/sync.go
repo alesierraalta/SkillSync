@@ -32,6 +32,19 @@ func SyncSkills(root string, opts Options) (*runner.SyncReport, error) {
 	srcRoot := filepath.Join(root, ".agents", "skills")
 	dstRoot := filepath.Join(root, ".opencode", "skills")
 
+	totalStages := 3
+	if opts.Prune {
+		totalStages = 4
+	}
+	completedStages := 0
+	reportProgress := func(stage string) {
+		if opts.ProgressCb == nil {
+			return
+		}
+		completedStages++
+		opts.ProgressCb(stage, completedStages, totalStages)
+	}
+
 	// Collect all source skill paths
 	var srcPaths []string
 	err := filepath.WalkDir(srcRoot, func(path string, d fs.DirEntry, err error) error {
@@ -79,6 +92,7 @@ func SyncSkills(root string, opts Options) (*runner.SyncReport, error) {
 	if err != nil && !os.IsNotExist(err) {
 		return report, fmt.Errorf("walk .agents/skills: %w", err)
 	}
+	reportProgress("Discovering source skills")
 
 	// Collect existing destination skills (for prune)
 	var dstOrphans map[string]bool
@@ -105,6 +119,9 @@ func SyncSkills(root string, opts Options) (*runner.SyncReport, error) {
 			}
 			return nil
 		})
+	}
+	if opts.Prune {
+		reportProgress("Discovering orphan destination skills")
 	}
 
 	// Mirror each source skill
@@ -197,6 +214,8 @@ func SyncSkills(root string, opts Options) (*runner.SyncReport, error) {
 		}
 	}
 
+	reportProgress("Mirroring skills")
+
 	// Prune orphans
 	if opts.Prune && !opts.DryRun {
 		for name := range dstOrphans {
@@ -214,6 +233,11 @@ func SyncSkills(root string, opts Options) (*runner.SyncReport, error) {
 		for name := range dstOrphans {
 			fmt.Printf("[dry-run] would prune: %s\n", name)
 		}
+	}
+	if opts.Prune {
+		reportProgress("Pruning orphan skills")
+	} else {
+		reportProgress("Sync complete")
 	}
 
 	return report, nil

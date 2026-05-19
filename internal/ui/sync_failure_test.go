@@ -1,15 +1,16 @@
 package ui
 
 import (
+	"skillsync/tui/internal/storage"
 	"strings"
 	"testing"
 
-	"skillsync/tui/internal/runner"
 	tea "github.com/charmbracelet/bubbletea"
+	"skillsync/tui/internal/runner"
 )
 
 func TestSyncFailureExplicitState(t *testing.T) {
-	m := NewModel()
+	m := NewModel(NewBackend(storage.NewService("")))
 	m.Screen = ScreenSyncing
 	m.PrevScreen = ScreenList
 
@@ -31,12 +32,12 @@ func TestSyncFailureExplicitState(t *testing.T) {
 
 	// 2. Verify view rendering
 	view := m.syncingView()
-	
+
 	// Should show "esc: back"
 	if !strings.Contains(view, "esc: back") {
 		t.Error("expected view to contain 'esc: back' in failure state")
 	}
-	
+
 	// 3. Verify esc navigation
 	res, _ := m.handleSyncingKeys(tea.KeyMsg{Type: tea.KeyEsc})
 	m = res.(Model)
@@ -46,7 +47,7 @@ func TestSyncFailureExplicitState(t *testing.T) {
 }
 
 func TestSyncSuccessResetsState(t *testing.T) {
-	m := NewModel()
+	m := NewModel(NewBackend(storage.NewService("")))
 	m.SyncFailed = true // start with failed state
 	m.Screen = ScreenList
 

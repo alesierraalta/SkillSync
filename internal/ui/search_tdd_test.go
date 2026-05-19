@@ -12,16 +12,16 @@ func TestNewModel_SearchInitialization(t *testing.T) {
 	m := NewModel(NewBackend(storage.NewService("")))
 
 	// Task 1.2: Check fields
-	if m.searchInput.Placeholder != "Search skills..." {
-		t.Errorf("expected searchInput placeholder 'Search skills...', got %q", m.searchInput.Placeholder)
+	if m.List.searchInput.Placeholder != "Search skills..." {
+		t.Errorf("expected searchInput placeholder 'Search skills...', got %q", m.List.searchInput.Placeholder)
 	}
 
-	if m.searchFocused != false {
+	if m.List.searchFocused != false {
 		t.Error("expected searchFocused to be false initially")
 	}
 
 	// Task 1.3: Check list filter disabled
-	if m.list.KeyMap.Filter.Enabled() {
+	if m.List.list.KeyMap.Filter.Enabled() {
 		t.Error("expected list filter key to be disabled")
 	}
 }
@@ -66,12 +66,12 @@ func TestModel_FilterSkills(t *testing.T) {
 			for _, s := range tt.allSkills {
 				items = append(items, item{skill: types.Skill{Name: s}})
 			}
-			m.allSkills = items
+			m.List.allSkills = items
 
 			m.filterSkills(tt.query)
 
-			if len(m.list.Items()) != tt.expectedCount {
-				t.Errorf("expected %d items, got %d", tt.expectedCount, len(m.list.Items()))
+			if len(m.List.list.Items()) != tt.expectedCount {
+				t.Errorf("expected %d items, got %d", tt.expectedCount, len(m.List.list.Items()))
 			}
 		})
 	}
@@ -108,11 +108,11 @@ func TestModel_FocusTransitions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			m := NewModel(NewBackend(storage.NewService("")))
 			m.Screen = ScreenList
-			m.searchFocused = tt.initialFocus
-			if m.searchFocused {
-				m.searchInput.Focus()
+			m.List.searchFocused = tt.initialFocus
+			if m.List.searchFocused {
+				m.List.searchInput.Focus()
 			} else {
-				m.searchInput.Blur()
+				m.List.searchInput.Blur()
 			}
 
 			var msg tea.Msg
@@ -126,11 +126,11 @@ func TestModel_FocusTransitions(t *testing.T) {
 			newModel, _ := m.Update(msg)
 			res := newModel.(Model)
 
-			if res.searchFocused != tt.expectedFocus {
-				t.Errorf("expected searchFocused %v, got %v", tt.expectedFocus, res.searchFocused)
+			if res.List.searchFocused != tt.expectedFocus {
+				t.Errorf("expected searchFocused %v, got %v", tt.expectedFocus, res.List.searchFocused)
 			}
-			if res.searchInput.Focused() != tt.expectedFocus {
-				t.Errorf("expected searchInput.Focused() %v, got %v", tt.expectedFocus, res.searchInput.Focused())
+			if res.List.searchInput.Focused() != tt.expectedFocus {
+				t.Errorf("expected searchInput.Focused() %v, got %v", tt.expectedFocus, res.List.searchInput.Focused())
 			}
 		})
 	}
@@ -139,14 +139,14 @@ func TestModel_FocusTransitions(t *testing.T) {
 func TestModel_SlashKeyDisabled(t *testing.T) {
 	m := NewModel(NewBackend(storage.NewService("")))
 	m.Screen = ScreenList
-	m.searchFocused = false
+	m.List.searchFocused = false
 
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")}
 	newModel, _ := m.Update(msg)
 	res := newModel.(Model)
 
 	// If it doesn't activate anything, searchFocused should stay false
-	if res.searchFocused {
+	if res.List.searchFocused {
 		t.Error("expected searchFocused to stay false on '/'")
 	}
 }
@@ -157,27 +157,27 @@ func TestModel_SearchIntegration(t *testing.T) {
 
 	s1 := types.Skill{Name: "git helper"}
 	s2 := types.Skill{Name: "docker setup"}
-	m.allSkills = []list.Item{item{skill: s1}, item{skill: s2}}
-	m.list.SetItems(m.allSkills)
+	m.List.allSkills = []list.Item{item{skill: s1}, item{skill: s2}}
+	m.List.list.SetItems(m.List.allSkills)
 
 	// 1. Tab to focus search
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyTab})
-	if !m.searchFocused {
+	if !m.List.searchFocused {
 		t.Fatal("expected search to be focused after Tab")
 	}
 
 	// 2. Type 'g'
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("g")})
-	if len(m.list.Items()) != 1 {
-		t.Errorf("expected 1 item after 'g', got %d", len(m.list.Items()))
+	if len(m.List.list.Items()) != 1 {
+		t.Errorf("expected 1 item after 'g', got %d", len(m.List.list.Items()))
 	}
-	if it, ok := m.list.Items()[0].(item); !ok || it.skill.Name != "git helper" {
-		t.Errorf("expected 'git helper', got %v", m.list.Items()[0])
+	if it, ok := m.List.list.Items()[0].(item); !ok || it.skill.Name != "git helper" {
+		t.Errorf("expected 'git helper', got %v", m.List.list.Items()[0])
 	}
 
 	// 3. Backspace (delete 'g')
 	m, _ = updateModel(m, tea.KeyMsg{Type: tea.KeyBackspace})
-	if len(m.list.Items()) != 2 {
-		t.Errorf("expected 2 items after backspace, got %d", len(m.list.Items()))
+	if len(m.List.list.Items()) != 2 {
+		t.Errorf("expected 2 items after backspace, got %d", len(m.List.list.Items()))
 	}
 }

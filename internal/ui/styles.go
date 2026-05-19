@@ -64,4 +64,14 @@ var (
 
 	checkmarkStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("42"))
+
+	searchBarFocused = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("205")).
+				Padding(0, 1)
+
+	searchBarBlurred = lipgloss.NewStyle().
+				Border(lipgloss.NormalBorder()).
+				BorderForeground(lipgloss.Color("240")).
+				Padding(0, 1)
 )

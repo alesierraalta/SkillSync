@@ -3,8 +3,7 @@
                                                                                 
   # Test Skill                                                                  
                                                                                 
-  **Description:** No description provided                                      
-  **Scope:** No scope specified                                                 
+  **Description:** No description provided **Scope:** No scope specified        
                                                                                 
   *e Edit content*                                                              
                                                                                 
@@ -16,6 +15,7 @@
                                                                                 
   • Item 1                                                                      
   • Item 2                                                                      
+                                                                                
                                                                                 
                                                                                 
   esc: back | e: edit content | j/k: scroll  

@@ -10,7 +10,7 @@ import (
 
 func TestSync_CallbackInvoked(t *testing.T) {
 	tmpDir := t.TempDir()
-	agentsContent := "# Root Agents\n### Auto-invoke Skills\n\n| Action | Skill |\n| --- | --- |\n"
+	agentsContent := "# Root Agents\n## Available Skills\n\n| Skill | Description | Location |\n| --- | --- | --- |\n\n### Auto-invoke Skills\n\n| Action | Skill |\n| --- | --- |\n"
 	os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644)
 
 	var calls []struct {
@@ -53,7 +53,7 @@ func TestSync_CallbackInvoked(t *testing.T) {
 
 func TestSync_NilCallback(t *testing.T) {
 	tmpDir := t.TempDir()
-	agentsContent := "# Root Agents\n### Auto-invoke Skills\n\n| Action | Skill |\n| --- | --- |\n"
+	agentsContent := "# Root Agents\n## Available Skills\n\n| Skill | Description | Location |\n| --- | --- | --- |\n\n### Auto-invoke Skills\n\n| Action | Skill |\n| --- | --- |\n"
 	os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644)
 
 	report, err := Sync(tmpDir, SyncOptions{ProgressCb: nil})
@@ -68,6 +68,11 @@ func TestSync_NilCallback(t *testing.T) {
 func TestSync_ReportContainsChange(t *testing.T) {
 	tmpDir := t.TempDir()
 	agentsContent := `# Root Agents
+## Available Skills
+
+| Skill | Description | Location |
+| --- | --- | --- |
+
 ### Auto-invoke Skills
 
 | Action | Skill |
@@ -121,10 +126,52 @@ func TestSync_ReportCreatedStatus(t *testing.T) {
 	}
 }
 
+func TestUpdateAgentsMarkdown_FailsWhenRequiredHeadersMissing(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	agentsContent := `# Root Agents
+### auto-invoke skills
+
+| Action | Skill |
+| --- | --- |
+`
+	os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644)
+
+	err := UpdateAgentsMarkdown(tmpDir, nil, false)
+	if err == nil {
+		t.Fatal("expected error when required headers are missing")
+	}
+	if !strings.Contains(err.Error(), "required headers") {
+		t.Fatalf("expected required headers error, got: %v", err)
+	}
+}
+
+func TestUpdateAgentsMarkdown_FailsWhenOnlyOneRequiredHeaderExists(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	agentsContent := `# Root Agents
+## Available Skills
+
+| Skill | Description | Location |
+| --- | --- | --- |
+`
+	os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644)
+
+	err := UpdateAgentsMarkdown(tmpDir, nil, false)
+	if err == nil {
+		t.Fatal("expected error when one required header is missing")
+	}
+}
+
 func TestSync_UpdatesMarkdownTables(t *testing.T) {
 	tmpDir := t.TempDir()
 	
 	agentsContent := `# Root Agents
+## Available Skills
+
+| Skill | Description | Location |
+| --- | --- | --- |
+
 ### Auto-invoke Skills
 
 | Action | Skill |

@@ -1,12 +1,15 @@
 package ui
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/types"
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestInstallCoreSkill(t *testing.T) {
@@ -18,7 +21,8 @@ func TestInstallCoreSkill(t *testing.T) {
 	skills := []string{"skill-creator", "skill-sync", "find-skills"}
 
 	for _, sk := range skills {
-		err := InstallCoreSkill(sk)
+		backend := NewBackend(nil)
+		err := backend.InstallCoreSkill(sk)
 		if err != nil {
 			t.Fatalf("installCoreSkill(%s) failed: %v", sk, err)
 		}
@@ -79,7 +83,8 @@ func TestInstallCoreSkill_MultiProvider(t *testing.T) {
 
 	// Install a core skill
 	sk := "find-skills"
-	if err := InstallCoreSkill(sk); err != nil {
+	backend := NewBackend(nil)
+	if err := backend.InstallCoreSkill(sk); err != nil {
 		t.Fatalf("InstallCoreSkill(%s) failed: %v", sk, err)
 	}
 
@@ -110,8 +115,12 @@ func TestInstantiateEcosystemCmd_RegistersOpenCode(t *testing.T) {
 	// Create .opencode directory (simulates existing OpenCode installation)
 	_ = os.MkdirAll(".opencode", 0755)
 
+	storageRoot := t.TempDir()
+	sService := storage.NewService(storageRoot)
+
 	// Run instantiateEcosystemCmd
-	cmd := instantiateEcosystemCmd()
+	backend := NewBackend(sService)
+	cmd := instantiateEcosystemCmd(backend, "")
 	// Execute the command (tea.Cmd is func() tea.Msg)
 	msg := cmd()
 
@@ -142,6 +151,46 @@ func TestInstantiateEcosystemCmd_RegistersOpenCode(t *testing.T) {
 	}
 }
 
+func TestInstantiateEcosystemCmd_RegistersProject(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	storageRoot := filepath.Join(tmpDir, "storage")
+	sService := storage.NewService(storageRoot)
+
+	// Run instantiateEcosystemCmd with service and path
+	backend := NewBackend(sService)
+	cmd := instantiateEcosystemCmd(backend, tmpDir)
+	msg := cmd()
+
+	// Should not error
+	if em, ok := msg.(ecosystemMsg); ok && em.err != nil {
+		t.Fatalf("instantiateEcosystemCmd failed: %v", em.err)
+	}
+
+	// Verify project was registered
+	projects, err := sService.GetProjects()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, p := range projects {
+		if p.Path == tmpDir {
+			found = true
+			if !p.LastSynced.IsZero() {
+				t.Errorf("expected LastSynced to be zero, got %v", p.LastSynced)
+			}
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("expected project %s to be registered", tmpDir)
+	}
+}
 
 func TestInstallFromStorage(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -150,12 +199,12 @@ func TestInstallFromStorage(t *testing.T) {
 	_ = os.Chdir(tmpDir)
 
 	// Setup fake global storage
-	storageRoot := t.TempDir()
-	sService := &storage.Service{RootPath: storageRoot}
-	
+	storageRootStored := t.TempDir()
+	sService := &storage.Service{RootPath: storageRootStored}
+
 	skillName := "stored-skill"
 	skillContent := "name: stored-skill\ndescription: from storage"
-	
+
 	err := sService.Save(&types.Skill{
 		Name:    skillName,
 		RawBody: skillContent,
@@ -168,11 +217,13 @@ func TestInstallFromStorage(t *testing.T) {
 	}
 
 	// Setup model for installer
-	m := NewModel()
-	m.storageService = sService
+	_ = t.TempDir()
+	backendSvc := NewBackend(sService) // Use the one with the skill!
+	m := NewModel(backendSvc)
 	m.storedSkills, _ = sService.List()
-	m.installerStoredSkills = make([]bool, len(m.storedSkills))
-	m.installerStoredSkills[0] = true // Select the one skill
+	m.Installer.AllStored = m.storedSkills
+	m.Installer.StoredSkills = make([]bool, len(m.storedSkills))
+	m.Installer.StoredSkills[0] = true // Select the one skill
 
 	// Run step 0.5 (Install from storage)
 	cmd := nextInstallerStep(m, 0.5)
@@ -192,8 +243,121 @@ func TestInstallFromStorage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read installed skill: %v", err)
 	}
-	if string(content) != skillContent {
-		t.Errorf("content mismatch. expected %q, got %q", skillContent, string(content))
+	if !strings.Contains(string(content), skillContent) {
+		t.Errorf("content mismatch. expected body %q to be in %q", skillContent, string(content))
+	}
+}
+
+func TestNextInstallerStep_RegistersProject(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	storageRoot := filepath.Join(tmpDir, "storage")
+	sService := storage.NewService(storageRoot)
+
+	m := NewModel(NewBackend(sService))
+	m.rootPath = tmpDir
+
+	// Run step 0.6
+	cmd := nextInstallerStep(m, 0.6)
+	msg := cmd()
+
+	progress, ok := msg.(installerProgressMsg)
+	if !ok {
+		t.Fatalf("expected installerProgressMsg, got %T", msg)
+	}
+	if progress.percent != 1.0 {
+		t.Errorf("expected progress 1.0, got %f", progress.percent)
+	}
+
+	// Verify project was registered
+	projects, err := sService.GetProjects()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	found := false
+	for _, p := range projects {
+		absTmp, _ := filepath.Abs(tmpDir)
+		if p.Path == absTmp {
+			found = true
+			if !p.LastSynced.IsZero() {
+				t.Errorf("expected LastSynced to be zero, got %v", p.LastSynced)
+			}
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("expected project %s to be registered", tmpDir)
+	}
+}
+
+func TestEcosystemInstantiation_EndToEnd(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	storageRoot := filepath.Join(tmpDir, "storage")
+	sService := storage.NewService(storageRoot)
+	backend := NewBackend(sService)
+
+	m := NewModel(backend)
+	m.rootPath = tmpDir
+
+	// Initialize sizes
+	newModelSize, _ := m.Update(tea.WindowSizeMsg{Width: 100, Height: 50})
+	m = newModelSize.(Model)
+
+	// 1. Initial state: Projects screen is empty
+	m.Screen = ScreenProjects
+	msg := m.loadProjectsCmd()()
+	newModel, _ := m.Update(msg)
+	m = newModel.(Model)
+
+	if len(m.projectList.Items()) != 0 {
+		t.Errorf("expected 0 projects initially, got %d", len(m.projectList.Items()))
+	}
+
+	// 2. Trigger Init (Instantiate Ecosystem)
+	_ = m.Init()
+	// Init returns tea.Batch(loadSkills, instantiateEcosystemCmd)
+	// We only care about the ecosystem one for this test.
+	// In Bubble Tea testing, we'd normally use a simulator, but here we can just execute.
+
+	// Simulate the ecosystemMsg arriving
+	ecoMsg := instantiateEcosystemCmd(m.backend, m.rootPath)()
+	newModel, _ = m.Update(ecoMsg)
+	m = newModel.(Model)
+
+	if m.StatusMsg != "Ecosistema instanciado" {
+		t.Errorf("expected status 'Ecosistema instanciado', got %q", m.StatusMsg)
+	}
+
+	// 3. Navigate back to Projects and load
+	msg = m.loadProjectsCmd()()
+	newModel, _ = m.Update(msg)
+	m = newModel.(Model)
+
+	if len(m.projectList.Items()) != 1 {
+		t.Errorf("expected 1 project after instantiation, got %d", len(m.projectList.Items()))
+	}
+
+	item := m.projectList.Items()[0].(projectItem)
+	absTmp, _ := filepath.Abs(tmpDir)
+	if item.project.Path != absTmp {
+		t.Errorf("expected project path %s, got %s", absTmp, item.project.Path)
+	}
+	if !item.project.LastSynced.IsZero() {
+		t.Errorf("expected LastSynced to be zero")
+	}
+
+	view := m.projectsView()
+	if !strings.Contains(view, "Último sync: Nunca") {
+		t.Errorf("expected view to show 'Nunca', got:\n%s", view)
 	}
 }
 
@@ -206,7 +370,7 @@ func TestRegisterOpenCodeTools_PreservesExisting(t *testing.T) {
 	dir := ".opencode"
 	_ = os.MkdirAll(dir, 0755)
 	packagePath := filepath.Join(dir, "package.json")
-	
+
 	// Note: Under the new design, tools are fully regenerated from mirrored skills.
 	// This test verifies that base 5 commands are present after registration.
 	existingContent := `{
@@ -225,7 +389,8 @@ func TestRegisterOpenCodeTools_PreservesExisting(t *testing.T) {
 }`
 	_ = os.WriteFile(packagePath, []byte(existingContent), 0644)
 
-	err := RegisterOpenCodeTools()
+	backend := NewBackend(nil)
+	err := backend.RegisterOpenCodeTools()
 	if err != nil {
 		t.Fatalf("registerOpenCodeTools failed: %v", err)
 	}
@@ -258,14 +423,14 @@ func TestRegisterOpenCodeTools_PreservesExisting(t *testing.T) {
 	// The base 5 commands should always be present.
 }
 
-
 func TestRegisterSkillManagerAgent_CreatesFile(t *testing.T) {
 	tmpDir := t.TempDir()
 	origDir, _ := os.Getwd()
 	defer os.Chdir(origDir)
 	_ = os.Chdir(tmpDir)
 
-	err := RegisterSkillManagerAgent()
+	backend := NewBackend(nil)
+	err := backend.RegisterSkillManagerAgent()
 	if err != nil {
 		t.Fatalf("RegisterSkillManagerAgent failed: %v", err)
 	}
@@ -322,14 +487,15 @@ func TestRegisterSkillManagerAgent_Idempotent(t *testing.T) {
 	defer os.Chdir(origDir)
 	_ = os.Chdir(tmpDir)
 
+	backend := NewBackend(nil)
 	// First call
-	err := RegisterSkillManagerAgent()
+	err := backend.RegisterSkillManagerAgent()
 	if err != nil {
 		t.Fatalf("first call failed: %v", err)
 	}
 
 	// Second call should not fail
-	err = RegisterSkillManagerAgent()
+	err = backend.RegisterSkillManagerAgent()
 	if err != nil {
 		t.Fatalf("second call failed: %v", err)
 	}
@@ -367,8 +533,9 @@ func TestRegisterSkillManagerAgent_OpenCodeToolsPreserved(t *testing.T) {
 	_ = os.WriteFile(packagePath, []byte(existingContent), 0644)
 
 	// Run both registration functions
-	_ = RegisterOpenCodeTools()
-	_ = RegisterSkillManagerAgent()
+	backend := NewBackend(nil)
+	_ = backend.RegisterOpenCodeTools()
+	_ = backend.RegisterSkillManagerAgent()
 
 	// Note: Under the new design, RegisterSkillManagerAgent calls SyncSkills
 	// which may create or modify package.json.
@@ -406,7 +573,8 @@ auto_invoke: true
 	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n"), 0644)
 
 	// Call RegisterOpenCodeTools which should delegate to opencode.SyncSkills and opencode.RegenerateTools
-	err := RegisterOpenCodeTools()
+	backend := NewBackend(nil)
+	err := backend.RegisterOpenCodeTools()
 	if err != nil {
 		t.Fatalf("RegisterOpenCodeTools failed: %v", err)
 	}
@@ -430,5 +598,70 @@ auto_invoke: true
 	}
 }
 
+func TestInstallCoreSkill_LFNormalization(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	_ = os.Chdir(tmpDir)
 
+	// Setup: create a provider dir
+	_ = os.MkdirAll(".agents/skills", 0755)
 
+	// Run installation for a skill that has .sh files (skill-sync)
+	backend := NewBackend(nil)
+	err := backend.InstallCoreSkill("skill-sync")
+	if err != nil {
+		t.Fatalf("InstallCoreSkill failed: %v", err)
+	}
+
+	// Verify sync.sh has LF line endings
+	syncSh := filepath.Join(".agents", "skills", "skill-sync", "assets", "sync.sh")
+	content, err := os.ReadFile(syncSh)
+	if err != nil {
+		t.Fatalf("failed to read sync.sh: %v", err)
+	}
+
+	if bytes.Contains(content, []byte("\r\n")) {
+		t.Errorf("sync.sh contains CRLF, expected only LF")
+	}
+}
+
+func TestInstallCoreSharedLib_RepairCRLF(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	_ = os.Chdir(tmpDir)
+
+	libDir := filepath.Join(".agents", "skills", "lib")
+	_ = os.MkdirAll(libDir, 0755)
+	utilsPath := filepath.Join(libDir, "utils.sh")
+
+	// 1. Create a file with CRLF and some user edit
+	userContent := "# User edit\r\necho 'hello'\r\n"
+	err := os.WriteFile(utilsPath, []byte(userContent), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 2. Run repair
+	backend := NewBackend(nil)
+	err = backend.installCoreSharedLib()
+	if err != nil {
+		t.Fatalf("installCoreSharedLib failed: %v", err)
+	}
+
+	// 3. Verify it was repaired (LF) but preserved user content
+	content, err := os.ReadFile(utilsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if bytes.Contains(content, []byte("\r\n")) {
+		t.Errorf("utils.sh still contains CRLF")
+	}
+
+	expected := "# User edit\necho 'hello'\n"
+	if string(content) != expected {
+		t.Errorf("expected content %q, got %q", expected, string(content))
+	}
+}

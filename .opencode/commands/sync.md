@@ -1,6 +1,6 @@
 ---
 managed_by: skillsync
-description: Synchronize skills and update AGENTS.md/OPENCODE.md
+description: Synchronize all skills with OpenCode
 ---
 
 /synck sync "$!1"

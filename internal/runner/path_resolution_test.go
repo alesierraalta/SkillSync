@@ -100,3 +100,43 @@ fi
 		t.Errorf("Expected 'SUCCESS' in stdout, got %q", result.Stdout)
 	}
 }
+
+func TestExecuteSync_NormalizesCRLFShellScript(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		if _, err := exec.LookPath("sh"); err != nil {
+			if _, err := exec.LookPath("bash"); err != nil {
+				t.Skip("sh or bash not found, skipping CRLF shell script test")
+			}
+		}
+	}
+
+	tmpDir := t.TempDir()
+	assetsDir := filepath.Join(tmpDir, ".agents", "skills", "skill-sync", "assets")
+	if err := os.MkdirAll(assetsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	syncPath := filepath.Join(assetsDir, "sync.sh")
+	syncContent := "#!/usr/bin/env bash\r\nset -e\r\nif [ \"ok\" = \"ok\" ]; then\r\n  echo \"SUCCESS\"\r\nelse\r\n  exit 1\r\nfi\r\n"
+	if err := os.WriteFile(syncPath, []byte(syncContent), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	originalWd, _ := os.Getwd()
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(originalWd)
+
+	runner := NewRunner(filepath.Join(".agents", "skills", "skill-sync", "assets", "sync.sh"))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	result := <-runner.ExecuteSync(ctx, nil)
+	if result.ExitCode != 0 {
+		t.Fatalf("expected CRLF script to run, exit code %d, stderr: %q", result.ExitCode, result.Stderr)
+	}
+	if !strings.Contains(result.Stdout, "SUCCESS") {
+		t.Errorf("expected SUCCESS in stdout, got %q", result.Stdout)
+	}
+}

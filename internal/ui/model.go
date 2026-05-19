@@ -8,21 +8,13 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/glamour"
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
-	"skillsync/tui/internal/syncengine"
 	"skillsync/tui/internal/types"
 )
 
-// syncEngineSync is the default sync engine function; override in tests.
-// syncEngineSync is deprecated and will be removed in favor of AppService.Sync
-var syncEngineSync = func(m *Model, root string, opts syncengine.SyncOptions) (*runner.SyncReport, error) {
-	return m.backend.Sync(root, opts)
-}
+
 
 type Screen int
 
@@ -51,46 +43,33 @@ type Model struct {
 	PrevScreen     Screen
 	Width          int
 	Height         int
-	list           list.Model
-	viewport       viewport.Model
-	lastSelectedID string
-	selected       *types.Skill
-	inputs         []textarea.Model
-	syncOutput     string
-	err            error
-	rootPath       string
-	renderer       *glamour.TermRenderer
 	HomeCursor     int
 	StatusMsg      string
 	Progress       progress.Model
 	SyncFailed     bool
 	SyncFinished   bool
 	syncReport     *runner.SyncReport
+	err            error
+	rootPath       string
+	inputs         []textarea.Model
+	syncOutput     string
+	selected       *types.Skill
 
-	// Installer State
-	installerCursor       int
-	installerMode         bool // false = Recommended (Symlink/Global), true = Advanced (Copy/Local)
-	installerProviders    []bool
-	installerSkills       []bool
-	installerGlobal       bool
-	installerStoredSkills []bool
+	// Sub-models
+	Installer InstallerModel
+	List      ListModel
 
 	// Storage State
-	storageList    list.Model
-	storedSkills   []storage.StoredSkill
-	storageService *storage.Service
+	storageList  list.Model
+	storedSkills []storage.StoredSkill
 
 	// Projects State
 	projectList list.Model
 
-	// Search State
-	searchInput   textinput.Model
-	allSkills     []list.Item
-	searchFocused bool
-
 	// Service Layer
 	backend AppService
 }
+
 
 type item struct {
 	skill types.Skill
@@ -150,33 +129,21 @@ func (i item) Description() string { return i.skill.Metadata.Description }
 func (i item) FilterValue() string { return i.skill.Name }
 
 func NewModel(backend AppService) Model {
-	l := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
-	l.Title = "Skillsync TUI"
-	l.KeyMap.Filter.SetEnabled(false)
-
 	sl := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	sl.Title = "Almacenamiento Global"
 
 	pl := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	pl.Title = "Proyectos Sincronizados"
 
-	ti := textinput.New()
-	ti.Placeholder = "Search skills..."
-	ti.Blur()
-
 	return Model{
 		Screen:             ScreenHome,
 		PrevScreen:         ScreenHome,
-		list:               l,
 		storageList:        sl,
 		projectList:        pl,
-		viewport:           viewport.New(0, 0),
 		rootPath:           ".",
 		Progress:           progress.New(progress.WithDefaultGradient()),
-		installerProviders: []bool{true, false, true, false, true},
-		installerSkills:    []bool{true, true, true},
-		installerGlobal:    true,
-		searchInput:        ti,
+		Installer:          NewInstallerModel(backend, "."),
+		List:               NewListModel(backend, "."),
 		backend:            backend,
 	}
 }
@@ -235,76 +202,6 @@ func (m Model) GetKeyBindings() []KeyBinding {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.loadSkills(), instantiateEcosystemCmd(m.backend, m.rootPath))
+	return tea.Batch(m.List.Init(), m.loadSkills(), instantiateEcosystemCmd(m.backend, m.rootPath))
 }
 
-func (m *Model) initRenderer() error {
-	width := m.Width - 4
-	if m.Screen == ScreenList {
-		width = int(float64(m.Width)*0.6) - 4
-	}
-	return m.initRendererWithWidth(width)
-}
-
-func (m Model) renderMarkdown(content string) (string, error) {
-	if m.renderer == nil {
-		return content, nil
-	}
-	return m.renderer.Render(content)
-}
-
-func (m *Model) updatePreview() {
-	if i, ok := m.list.SelectedItem().(item); ok {
-		m.selected = &i.skill
-		m.lastSelectedID = i.skill.ID
-
-		desc := m.selected.Metadata.Description
-		if desc == "" {
-			desc = "No description provided"
-		}
-		scope := m.selected.Metadata.Scope
-		if scope == "" {
-			scope = "No scope specified"
-		}
-
-		metadata := fmt.Sprintf("# %s\n\n**Description:** %s\n**Scope:** %s\n\n*e Edit content*\n\n---\n\n",
-			m.selected.Name, desc, scope)
-
-		rawContent := m.selected.Prefix + m.selected.RawBody
-		if rawContent == "" {
-			rawContent = "_No content available_"
-		}
-
-		content := metadata + rawContent
-
-		// Calculate preview width (60% of total)
-		previewWidth := int(float64(m.Width) * 0.6)
-		if previewWidth <= 0 {
-			previewWidth = m.Width // Fallback for full screen or uninitialized
-		}
-
-		// Re-init renderer with correct width
-		_ = m.initRendererWithWidth(previewWidth - 4)
-
-		rendered, err := m.renderMarkdown(content)
-		if err == nil {
-			content = rendered
-		}
-		m.viewport.SetContent(content)
-	}
-}
-
-func (m *Model) initRendererWithWidth(width int) error {
-	if width <= 0 {
-		width = 80
-	}
-	r, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(width),
-	)
-	if err != nil {
-		return err
-	}
-	m.renderer = r
-	return nil
-}

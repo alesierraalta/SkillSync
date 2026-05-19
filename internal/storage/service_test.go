@@ -3,6 +3,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,8 +47,8 @@ func TestStorage(t *testing.T) {
 		}
 
 		content, _ := os.ReadFile(skillPath)
-		if string(content) != skill.RawBody {
-			t.Errorf("Expected content %q, got %q", skill.RawBody, string(content))
+		if !strings.Contains(string(content), skill.RawBody) {
+			t.Errorf("Expected body %q to be in %q", skill.RawBody, string(content))
 		}
 	})
 
@@ -86,14 +87,81 @@ func TestStorage(t *testing.T) {
 		skillPath := filepath.Join(tmpDir, "test-skill", "SKILL.md")
 		content, _ := os.ReadFile(skillPath)
 		
-		if string(content) != originalContent {
-			t.Errorf("Byte-for-byte failure. Expected %q, got %q", originalContent, string(content))
+		if !strings.Contains(string(content), originalContent) {
+			t.Errorf("Byte-for-byte failure. Expected body %q to be in %q", originalContent, string(content))
 		}
 
 		// Verify List still shows only 1 entry (overwritten, not duplicated)
 		skills, _ := s.List()
 		if len(skills) != 1 {
 			t.Errorf("Expected 1 skill after overwrite, got %d", len(skills))
+		}
+	})
+}
+
+func TestSavePersistsFullFormattedContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	s := &Service{RootPath: tmpDir}
+
+	skill := &types.Skill{
+		Name: "formatted-skill",
+		Metadata: types.Metadata{
+			Scope: "global",
+		},
+		RawBody: "# Body",
+	}
+
+	metadata := StoredMetadata{
+		SkillName: skill.Name,
+		SavedAt:   time.Now(),
+	}
+
+	err := s.Save(skill, metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	skillPath := filepath.Join(tmpDir, "formatted-skill", "SKILL.md")
+	raw, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := string(raw)
+	if !strings.Contains(content, "---") {
+		t.Error("Frontmatter delimiters '---' missing in saved file")
+	}
+	if !strings.Contains(content, "scope: global") {
+		t.Error("Metadata 'scope: global' missing in saved file")
+	}
+	if !strings.Contains(content, "# Body") {
+		t.Error("Body missing in saved file")
+	}
+}
+
+
+func TestNewServiceIsolation(t *testing.T) {
+	t.Run("prioritizes SKILLSYNC_HOME", func(t *testing.T) {
+		tmpHome := t.TempDir()
+		t.Setenv("SKILLSYNC_HOME", tmpHome)
+
+		s := NewService("")
+		expected := filepath.Join(tmpHome, "storage")
+		if s.RootPath != expected {
+			t.Errorf("expected RootPath %q, got %q", expected, s.RootPath)
+		}
+	})
+
+	t.Run("fallbacks to user home if env not set", func(t *testing.T) {
+		t.Setenv("SKILLSYNC_HOME", "")
+		// We can't easily mock os.UserHomeDir without more intrusive changes,
+		// but we can check it's not the empty root or something weird.
+		s := NewService("")
+		if s.RootPath == "" {
+			t.Error("expected non-empty RootPath")
+		}
+		if !strings.Contains(s.RootPath, ".skillsync") {
+			t.Errorf("expected RootPath to contain .skillsync, got %q", s.RootPath)
 		}
 	})
 }

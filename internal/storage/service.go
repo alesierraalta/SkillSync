@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"skillsync/tui/internal/parser"
 	"skillsync/tui/internal/types"
+	"time"
 )
 
 // Service handles global skill storage operations
@@ -16,8 +18,12 @@ type Service struct {
 // NewService creates a new storage service with default path if empty
 func NewService(root string) *Service {
 	if root == "" {
-		home, _ := os.UserHomeDir()
-		root = filepath.Join(home, ".skillsync", "storage")
+		if envHome := os.Getenv("SKILLSYNC_HOME"); envHome != "" {
+			root = filepath.Join(envHome, "storage")
+		} else {
+			home, _ := os.UserHomeDir()
+			root = filepath.Join(home, ".skillsync", "storage")
+		}
 	}
 	return &Service{RootPath: root}
 }
@@ -31,7 +37,11 @@ func (s *Service) Save(skill *types.Skill, metadata StoredMetadata) error {
 
 	// Save SKILL.md
 	skillPath := filepath.Join(skillDir, "SKILL.md")
-	if err := os.WriteFile(skillPath, []byte(skill.RawBody), 0644); err != nil {
+	content, err := parser.Format(skill)
+	if err != nil {
+		return fmt.Errorf("failed to format skill: %w", err)
+	}
+	if err := os.WriteFile(skillPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to save SKILL.md: %w", err)
 	}
 
@@ -95,4 +105,131 @@ func (s *Service) Load(skillID string) (string, error) {
 		return "", fmt.Errorf("failed to load skill content: %w", err)
 	}
 	return string(content), nil
+}
+
+func (s *Service) registryPath() string {
+	return filepath.Join(filepath.Dir(s.RootPath), "projects.json")
+}
+
+// RegisterProject adds or updates a project in the registry
+func (s *Service) RegisterProject(path string) error {
+	return s.registerProject(path, time.Now(), true)
+}
+
+// RegisterProjectInitial registers a project without setting a sync timestamp
+func (s *Service) RegisterProjectInitial(path string) error {
+	return s.registerProject(path, time.Time{}, false)
+}
+
+func (s *Service) registerProject(path string, lastSynced time.Time, overwrite bool) error {
+	registry, err := s.loadRegistry()
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to load registry: %w", err)
+	}
+
+	found := false
+	for i, p := range registry.Projects {
+		if p.Path == path {
+			if overwrite {
+				registry.Projects[i].LastSynced = lastSynced
+			}
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		registry.Projects = append(registry.Projects, ProjectInfo{
+			Path:       path,
+			LastSynced: lastSynced,
+		})
+	}
+
+	return s.saveRegistry(registry)
+}
+
+// GetProjects returns all registered projects sorted by last synced descending
+func (s *Service) GetProjects() ([]ProjectInfo, error) {
+	registry, err := s.loadRegistry()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []ProjectInfo{}, nil
+		}
+		return nil, fmt.Errorf("failed to load registry: %w", err)
+	}
+
+	var existing []ProjectInfo
+	for _, p := range registry.Projects {
+		if _, err := os.Stat(p.Path); err == nil {
+			existing = append(existing, p)
+		}
+	}
+
+	// Sort descending by LastSynced
+	for i := 0; i < len(existing); i++ {
+		for j := i + 1; j < len(existing); j++ {
+			if existing[j].LastSynced.After(existing[i].LastSynced) {
+				existing[i], existing[j] = existing[j], existing[i]
+			}
+		}
+	}
+
+	return existing, nil
+}
+
+func (s *Service) PruneRegistry() error {
+	registry, err := s.loadRegistry()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to load registry: %w", err)
+	}
+
+	var existing []ProjectInfo
+	for _, p := range registry.Projects {
+		if _, err := os.Stat(p.Path); err == nil {
+			existing = append(existing, p)
+		}
+	}
+
+	if len(existing) == len(registry.Projects) {
+		return nil // Nothing to prune
+	}
+
+	registry.Projects = existing
+	return s.saveRegistry(registry)
+}
+
+func (s *Service) loadRegistry() (ProjectRegistry, error) {
+	var registry ProjectRegistry
+	data, err := os.ReadFile(s.registryPath())
+	if err != nil {
+		return registry, err
+	}
+	err = json.Unmarshal(data, &registry)
+	return registry, err
+}
+
+func (s *Service) saveRegistry(registry ProjectRegistry) error {
+	dir := filepath.Dir(s.registryPath())
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create registry directory: %w", err)
+	}
+
+	data, err := json.MarshalIndent(registry, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal registry: %w", err)
+	}
+
+	tmpFile := s.registryPath() + ".tmp"
+	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write temporary registry file: %w", err)
+	}
+
+	if err := os.Rename(tmpFile, s.registryPath()); err != nil {
+		return fmt.Errorf("failed to rename temporary registry file: %w", err)
+	}
+
+	return nil
 }

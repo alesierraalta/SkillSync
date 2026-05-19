@@ -16,3 +16,14 @@ type StoredSkill struct {
 	ID       string
 	Metadata StoredMetadata
 }
+
+// ProjectInfo represents a registered project
+type ProjectInfo struct {
+	Path       string    `json:"path"`
+	LastSynced time.Time `json:"last_synced"`
+}
+
+// ProjectRegistry holds all registered projects
+type ProjectRegistry struct {
+	Projects []ProjectInfo `json:"projects"`
+}

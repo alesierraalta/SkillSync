@@ -1,0 +1,39 @@
+{
+  "items": [
+    {
+      "type": "BUG",
+      "message": "m.selected was NOT updated in handleContentViewKeys",
+      "file": "internal\\ui\\explore_repro_test.go",
+      "line": 46,
+      "column": 4
+    },
+    {
+      "type": "BUG",
+      "message": "viewport did not scroll because 'j' was consumed by list (or just not passed to viewport)",
+      "file": "internal\\ui\\explore_repro_test.go",
+      "line": 72,
+      "column": 4
+    },
+    {
+      "type": "BUG",
+      "message": "SyncFinished is still true",
+      "file": "internal\\ui\\explore_repro_test.go",
+      "line": 101,
+      "column": 4
+    },
+    {
+      "type": "BUG",
+      "message": "Installer.StoredSkills was NOT initialized because the msg arrived while on ScreenHome",
+      "file": "internal\\ui\\explore_repro_test.go",
+      "line": 134,
+      "column": 4
+    },
+    {
+      "type": "BUG",
+      "message": "HomeCursor is reset to 0 in handleListKeys",
+      "file": "internal\\ui\\explore_repro_test.go",
+      "line": 154,
+      "column": 4
+    }
+  ]
+}

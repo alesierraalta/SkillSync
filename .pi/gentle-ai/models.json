@@ -1,0 +1,35 @@
+{
+  "sdd-init": {
+    "model": "gemini-acp/gemini-3.1-flash-lite-preview"
+  },
+  "sdd-explore": {
+    "model": "gemini-acp/gemini-3-flash-preview"
+  },
+  "sdd-proposal": {
+    "model": "opencode-go/qwen3.6-plus"
+  },
+  "sdd-spec": {
+    "model": "opencode-go/kimi-k2.6"
+  },
+  "sdd-design": {
+    "model": "opencode-go/kimi-k2.6"
+  },
+  "sdd-tasks": {
+    "model": "opencode-go/kimi-k2.6"
+  },
+  "sdd-apply": {
+    "model": "opencode-go/qwen3.6-plus"
+  },
+  "sdd-verify": {
+    "model": "gemini-acp/gemini-3-flash-preview"
+  },
+  "sdd-archive": {
+    "model": "gemini-acp/gemini-3.1-flash-lite-preview"
+  },
+  "context7": {
+    "model": "gemini-acp/gemini-3-flash-preview"
+  },
+  "reviewer": {
+    "model": "gemini-acp/gemini-3-flash-preview"
+  }
+}

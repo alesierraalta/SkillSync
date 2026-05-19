@@ -3,7 +3,7 @@ package ui
 import (
 	"os"
 	"path/filepath"
-	"skillsync/tui/internal/runner"
+	"skillsync/tui/internal/storage"
 	"testing"
 )
 
@@ -21,7 +21,7 @@ func TestSyncCreatesMissingAgentsMD(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(syncScriptPath), 0755); err != nil {
 		t.Fatalf("failed to create sync script dir: %v", err)
 	}
-	
+
 	// Create a dummy sync.sh that checks for AGENTS.md
 	dummySyncContent := `#!/bin/bash
 if [ ! -f "../../../../AGENTS.md" ]; then
@@ -36,21 +36,21 @@ exit 0
 	}
 
 	// 3. Initialize Model and start sync
-	m := NewModel()
+	m := NewModel(NewBackend(storage.NewService("")))
 	m.Screen = ScreenSyncing
-	
+
 	// This should now call ensureAgentsMD() before running the script
 	cmd := m.startSync()
 	msg := cmd()
 
-	res, ok := msg.(runner.SyncResult)
+	res, ok := msg.(syncReportMsg)
 	if !ok {
-		t.Fatalf("expected runner.SyncResult, got %T", msg)
+		t.Fatalf("expected syncReportMsg, got %T", msg)
 	}
 
 	// 4. Assertions
-	if res.ExitCode != 0 {
-		t.Errorf("Sync failed with exit code %d, stderr: %q. Expected AGENTS.md creation and success.", res.ExitCode, res.Stderr)
+	if res.err != nil {
+		t.Errorf("Sync failed with error: %v. Expected AGENTS.md creation and success.", res.err)
 	}
 
 	// Verify AGENTS.md was created

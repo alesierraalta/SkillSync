@@ -13,6 +13,7 @@ import (
 	"skillsync/tui/internal/opencode"
 	"skillsync/tui/internal/parser"
 	"skillsync/tui/internal/runner"
+	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/syncengine"
 	"skillsync/tui/internal/types"
 	"skillsync/tui/internal/ui"
@@ -134,6 +135,7 @@ func handleSync(args []string) error {
 	opts := syncengine.SyncOptions{
 		DryRun:     *dryRun,
 		ProgressCb: progressCb,
+		Storage:    storage.NewService(""),
 	}
 	engineReport, err := syncengine.Sync(root, opts)
 	if err != nil {
@@ -198,6 +200,11 @@ func handleSyncLegacy(args []string) error {
 	if res.ExitCode != 0 {
 		return fmt.Errorf("sync exited with code %d", res.ExitCode)
 	}
+
+	// Register project after successful legacy sync
+	s := storage.NewService("")
+	absRoot, _ := filepath.Abs(root)
+	_ = s.RegisterProject(absRoot)
 
 	fmt.Println("✅ Synchronization complete.")
 
@@ -367,18 +374,127 @@ func handleCreateSkill(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: synck createskill <prompt>")
 	}
-	prompt := strings.Join(args, " ")
+	prompt := strings.TrimSpace(strings.Join(args, " "))
+	if len(strings.Fields(prompt)) < 3 {
+		return fmt.Errorf("strict validation failed: prompt must include at least 3 words describing scope, behavior and context")
+	}
 
-	fmt.Printf("🛠️ Preparing to create skill: %q\n", prompt)
-	fmt.Println("\nGUIDE FOR AI AGENT:")
-	fmt.Println("1. SEARCH: Use 'find-skills' to check if a similar skill already exists.")
-	fmt.Printf("   Pattern to search: %q\n", prompt)
-	fmt.Println("2. CREATE: Use 'skill-creator' to generate the new skill based on the prompt.")
-	fmt.Println("3. SYNC: After the skill files are created, run 'synck sync' to register it.")
-	fmt.Println("\nWaiting for agent to perform steps...")
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	root := findProjectRoot(cwd)
+	if root == "" {
+		return fmt.Errorf("could not find project root (missing .agents or .agent directory)")
+	}
 
+	skillName := slugifySkillName(prompt)
+	skillDir := filepath.Join(root, ".agents", "skills", skillName)
+	if _, err := os.Stat(skillDir); err == nil {
+		return fmt.Errorf("strict validation failed: skill already exists at %s", skillDir)
+	}
+
+	if err := os.MkdirAll(filepath.Join(skillDir, "assets"), 0755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(skillDir, "references"), 0755); err != nil {
+		return err
+	}
+
+	skillBody := renderSkillMarkdown(skillName, prompt)
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillBody), 0644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "assets", "SKILL-TEMPLATE.md"), []byte(skillTemplate), 0644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "references", "README.md"), []byte(referencesTemplate), 0644); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "CHECKLIST.md"), []byte(checklistTemplate), 0644); err != nil {
+		return err
+	}
+
+	fmt.Printf("✅ Skill scaffold created: %s\n", skillDir)
+	fmt.Println("Next: run 'synck sync' to register the new skill.")
 	return nil
 }
+
+func slugifySkillName(prompt string) string {
+	var b strings.Builder
+	prevDash := false
+	for _, r := range strings.ToLower(prompt) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			prevDash = false
+			continue
+		}
+		if !prevDash {
+			b.WriteRune('-')
+			prevDash = true
+		}
+	}
+	name := strings.Trim(b.String(), "-")
+	if len(name) > 48 {
+		name = strings.Trim(name[:48], "-")
+	}
+	if name == "" {
+		return "new-skill"
+	}
+	return name
+}
+
+func renderSkillMarkdown(skillName, prompt string) string {
+	return fmt.Sprintf("---\nname: %s\ndescription: >\n  %s.\n  Trigger: When the user asks for %s.\nmetadata:\n  version: '1.0'\n  scope: [root]\n  auto_invoke: 'Creating or updating %s workflows'\n---\n\n## When to Use\n\n- When this pattern appears repeatedly.\n- When generic guidance is not enough for this project.\n- When the task needs clear operational steps.\n\n## When NOT to Use\n\n- One-off tasks.\n- Cases already covered by an existing skill.\n\n## Critical Patterns\n\n- MUST follow the project conventions before generating changes.\n- MUST keep examples minimal and executable.\n- MUST prefer local references over external links.\n\n## Decision Tree\n\n~~~text\nIs there an existing skill for this? -> Reuse it\nNeed project-specific rules? -> Extend this skill\nOtherwise -> Keep guidance lightweight\n~~~\n\n## Code Examples\n\n### Example 1\n\n~~~text\nReplace with a focused example for %s\n~~~\n\n## Commands\n\n~~~bash\n# Add real commands for this skill's workflow\n~~~\n\n## Resources\n\n- **Templates**: See [assets/](assets/)\n- **Documentation**: See [references/](references/)\n", skillName, prompt, prompt, skillName, skillName)
+}
+
+const skillTemplate = `# Skill Name
+
+---
+name: { skill-name }
+description: >
+  {Brief description of what this skill enables}.
+  Trigger: {When the AI should load this skill - be specific}.
+metadata:
+  version: '1.0'
+  scope: [api]
+  auto_invoke: '{Action that requires this skill}'
+---
+
+## When to Use
+
+- {Condition 1}
+- {Condition 2}
+
+## Critical Patterns
+
+- {Rule 1}
+- {Rule 2}
+
+## Code Examples
+
+### Example
+
+~~~text
+{minimal, focused example}
+~~~
+`
+
+const referencesTemplate = `# Local References
+
+Add links to local project docs only (no web URLs):
+
+- documentation/{topic}.md
+- docs/{topic}.md
+`
+
+const checklistTemplate = "# Skill Quality Checklist (Strict)\n\n" +
+	"- [ ] Frontmatter complete (`name`, `description`, `metadata.version`, `metadata.scope`, `metadata.auto_invoke`)\n" +
+	"- [ ] Trigger is specific and actionable\n" +
+	"- [ ] Includes When to Use and When NOT to Use\n" +
+	"- [ ] Includes Critical Patterns (MUST / MUST NOT)\n" +
+	"- [ ] Includes at least one focused example\n" +
+	"- [ ] References only local docs\n"
 
 func handleSkill() error {
 	fmt.Println("📋 OpenCode Skill Management Commands:")

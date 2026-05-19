@@ -1,15 +1,15 @@
 package ui
 
 import (
-	"testing"
+	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/types"
-
+	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestEditSkillContentShortcutBug(t *testing.T) {
-	m := NewModel()
+	m := NewModel(NewBackend(storage.NewService("")))
 	m.Screen = ScreenContentView
 	m.Width = 100
 	m.Height = 50
@@ -25,13 +25,13 @@ func TestEditSkillContentShortcutBug(t *testing.T) {
 		RawBody: "Test Content",
 	}
 	m.selected = &skill
-	
+
 	// Manual update instead of updatePreview which depends on list state
 	metadata := "*e Edit content*\n"
-	m.viewport.SetContent(metadata + skill.RawBody)
+	m.List.viewport.SetContent(metadata + skill.RawBody)
 
 	// Verify initial affordance text
-	t.Logf("Viewport content (raw): %q", m.viewport.View())
+	t.Logf("Viewport content (raw): %q", m.List.viewport.View())
 	if !contains(metadata+skill.RawBody, "e Edit content") {
 		t.Errorf("expected affordance 'e Edit content' in viewport, not found")
 	}
@@ -71,8 +71,6 @@ func TestEditSkillContentShortcutBug(t *testing.T) {
 		t.Errorf("expected selected.RawBody to be updated to %q, got %q", "Test Content\n", m.selected.RawBody)
 	}
 }
-
-
 
 func updateModel(m Model, msg tea.Msg) (Model, tea.Cmd) {
 	newModel, cmd := m.Update(msg)

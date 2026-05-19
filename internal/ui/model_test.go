@@ -2,8 +2,10 @@ package ui
 
 import (
 	"os"
-	"testing"
+	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/types"
+	"testing"
+	"time"
 )
 
 func TestItemTitle(t *testing.T) {
@@ -48,15 +50,44 @@ func TestItemTitle(t *testing.T) {
 			if tt.name == "Virtual agent" {
 				sk.ID = "virtual:agents"
 			}
-			
+
 			it := item{skill: sk}
 			title := it.Title()
-			
+
 			if title != tt.expected {
 				t.Errorf("expected title %q, got %q", tt.expected, title)
 			}
 		})
 	}
+}
+
+func TestProjectItemDescription(t *testing.T) {
+	t.Run("displays Nunca for zero LastSynced", func(t *testing.T) {
+		item := projectItem{
+			project: storage.ProjectInfo{
+				Path:       "/test/path",
+				LastSynced: time.Time{},
+			},
+		}
+		expected := "Último sync: Nunca"
+		if got := item.Description(); got != expected {
+			t.Errorf("expected %q, got %q", expected, got)
+		}
+	})
+
+	t.Run("displays formatted date for non-zero LastSynced", func(t *testing.T) {
+		now := time.Date(2024, 5, 11, 15, 4, 0, 0, time.UTC)
+		item := projectItem{
+			project: storage.ProjectInfo{
+				Path:       "/test/path",
+				LastSynced: now,
+			},
+		}
+		expected := "Último sync: 2024-05-11 15:04"
+		if got := item.Description(); got != expected {
+			t.Errorf("expected %q, got %q", expected, got)
+		}
+	})
 }
 
 func TestInit_StaleBinaryWarning(t *testing.T) {
@@ -72,7 +103,7 @@ func TestInit_StaleBinaryWarning(t *testing.T) {
 	_ = os.MkdirAll(".agents/skills", 0755)
 	_ = os.WriteFile("AGENTS.md", []byte("# Agents\n"), 0644)
 
-	m := NewModel()
+	m := NewModel(NewBackend(storage.NewService("")))
 	m.rootPath = tmpDir
 
 	// tea.Batch is a variadic Cmd func - can't be introspected directly.
@@ -104,11 +135,32 @@ func TestInit_ReturnsNonNilCmd(t *testing.T) {
 	_ = os.MkdirAll(".agents/skills", 0755)
 	_ = os.WriteFile("AGENTS.md", []byte("# Agents\n"), 0644)
 
-	m := NewModel()
+	m := NewModel(NewBackend(storage.NewService("")))
 	m.rootPath = tmpDir
 
 	cmd := m.Init()
 	if cmd == nil {
 		t.Fatal("Init() returned nil — must return non-nil tea.Cmd for startup")
+	}
+}
+
+func TestGetKeyBindings(t *testing.T) {
+	m := NewModel(NewBackend(storage.NewService("")))
+	m.Screen = ScreenStorage
+	bindings := m.GetKeyBindings()
+
+	found := false
+	for _, b := range bindings {
+		if b.Key == "i" {
+			found = true
+			if b.Help != "install & sync" {
+				t.Errorf("expected help 'install & sync', got %q", b.Help)
+			}
+			break
+		}
+	}
+
+	if !found {
+		t.Error("expected keybinding 'i' not found for ScreenStorage")
 	}
 }

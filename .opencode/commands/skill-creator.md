@@ -1,0 +1,7 @@
+---
+managed_by: skillsync
+description: Creates new AI agent skills following the Agent Skills spec. Trigger: When user asks to create a new skill, add agent instructions, or document patterns for AI.
+
+---
+
+/synck skill-creator "$!1"

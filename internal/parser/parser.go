@@ -17,15 +17,24 @@ func Parse(path string) (*types.Skill, error) {
 	if err != nil {
 		return nil, err
 	}
+	s, err := ParseContent(string(raw))
+	if err != nil {
+		return nil, err
+	}
+	s.ID = filepath.ToSlash(path)
+	s.Path = path
+	if s.Name == "" {
+		s.Name = filepath.Base(filepath.Dir(path))
+	}
+	return s, nil
+}
 
-	content := string(raw)
+// ParseContent extracts skill info from raw string content.
+func ParseContent(content string) (*types.Skill, error) {
 	parts := strings.SplitN(content, "---", 3)
-	
+
 	if len(parts) < 3 {
 		return &types.Skill{
-			ID:       filepath.ToSlash(path),
-			Path:     path,
-			Name:     filepath.Base(filepath.Dir(path)),
 			RawBody: content,
 		}, nil
 	}
@@ -40,11 +49,12 @@ func Parse(path string) (*types.Skill, error) {
 		Scope       interface{} `yaml:"scope"`
 		LocalOnly   bool        `yaml:"local_only"`
 		Metadata    struct {
-			Scope interface{} `yaml:"scope"`
+			Scope      interface{} `yaml:"scope"`
+			AutoInvoke interface{} `yaml:"auto_invoke"`
 		} `yaml:"metadata"`
 	}
 
-	err = yaml.Unmarshal([]byte(yamlStr), &flexible)
+	err := yaml.Unmarshal([]byte(yamlStr), &flexible)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal YAML: %w", err)
 	}
@@ -52,10 +62,12 @@ func Parse(path string) (*types.Skill, error) {
 	var meta types.Metadata
 	meta.Description = flexible.Description
 	meta.LocalOnly = flexible.LocalOnly
-	
-	// Handle AutoInvoke as bool safely
-	if b, ok := flexible.AutoInvoke.(bool); ok {
-		meta.AutoInvoke = b
+
+	// Handle AutoInvoke safely (bool or non-empty string)
+	if flexible.Metadata.AutoInvoke != nil {
+		meta.AutoInvoke = isTrue(flexible.Metadata.AutoInvoke)
+	} else if flexible.AutoInvoke != nil {
+		meta.AutoInvoke = isTrue(flexible.AutoInvoke)
 	}
 
 	if flexible.Metadata.Scope != nil {
@@ -65,37 +77,46 @@ func Parse(path string) (*types.Skill, error) {
 	}
 
 	return &types.Skill{
-		ID:       filepath.ToSlash(path),
-		Path:     path,
-		Name:     filepath.Base(filepath.Dir(path)),
 		Prefix:   prefix,
 		Metadata: meta,
 		RawBody:  body,
 	}, nil
 }
 
+func isTrue(v interface{}) bool {
+	switch val := v.(type) {
+	case bool:
+		return val
+	case string:
+		return val != "" && val != "false"
+	}
+	return false
+}
+
 // Save writes SKILL.md back with comments preserved.
 // Note: Metadata fields are updated into the YAML Node structure.
-func Save(path string, skill *types.Skill) error {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return err
+func Format(skill *types.Skill) (string, error) {
+	var yamlStr string
+	if skill.Path != "" {
+		raw, err := os.ReadFile(skill.Path)
+		if err == nil {
+			content := string(raw)
+			parts := strings.SplitN(content, "---", 3)
+			if len(parts) >= 3 {
+				yamlStr = parts[1]
+			}
+		}
 	}
 
-	content := string(raw)
-	parts := strings.SplitN(content, "---", 3)
-	if len(parts) < 3 {
-		// No frontmatter, just write body
-		return os.WriteFile(path, []byte(skill.RawBody), 0644)
+	if yamlStr == "" {
+		// No existing file or no frontmatter, create minimal YAML
+		return skill.Prefix + "---\nscope: " + skill.Metadata.Scope + "\n---\n" + skill.RawBody, nil
 	}
-
-	yamlStr := parts[1]
-	body := parts[2]
 
 	var node yaml.Node
-	err = yaml.Unmarshal([]byte(yamlStr), &node)
+	err := yaml.Unmarshal([]byte(yamlStr), &node)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// Update metadata into node while preserving comments
@@ -111,7 +132,7 @@ func Save(path string, skill *types.Skill) error {
 	enc.SetIndent(2)
 	err = enc.Encode(&node)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// yaml.v3 appends its own "---" at start if not present, check
@@ -127,7 +148,16 @@ func Save(path string, skill *types.Skill) error {
 		}
 	}
 
-	finalContent := skill.Prefix + yamlResult + strings.TrimPrefix(body, "\n")
+	return skill.Prefix + yamlResult + skill.RawBody, nil
+}
+
+// Save writes SKILL.md back with comments preserved.
+// Note: Metadata fields are updated into the YAML Node structure.
+func Save(path string, skill *types.Skill) error {
+	finalContent, err := Format(skill)
+	if err != nil {
+		return err
+	}
 
 	// Atomic write
 	tmpPath := path + ".tmp"

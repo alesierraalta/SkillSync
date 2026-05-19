@@ -47,6 +47,46 @@ func NewRunner(defaultPath string) *Runner {
 	return &Runner{DefaultScriptPath: defaultPath}
 }
 
+func prepareScriptForExecution(path string) (string, func(), error) {
+	if !strings.HasSuffix(path, ".sh") {
+		return path, func() {}, nil
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", nil, err
+	}
+	if !bytes.Contains(content, []byte("\r\n")) {
+		return path, func() {}, nil
+	}
+
+	scriptDir := filepath.Dir(path)
+	scriptBase := filepath.Base(path)
+	tmp, err := os.CreateTemp(scriptDir, "."+scriptBase+"-lf-*.sh")
+	if err != nil {
+		return "", nil, err
+	}
+	tmpPath := tmp.Name()
+	cleanup := func() { _ = os.Remove(tmpPath) }
+
+	lfContent := bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
+	if _, err := tmp.Write(lfContent); err != nil {
+		_ = tmp.Close()
+		cleanup()
+		return "", nil, err
+	}
+	if err := tmp.Close(); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	if err := os.Chmod(tmpPath, 0755); err != nil {
+		cleanup()
+		return "", nil, err
+	}
+
+	return tmpPath, cleanup, nil
+}
+
 // ExecuteSync runs the sync script asynchronously
 func (r *Runner) ExecuteSync(ctx context.Context, args []string) <-chan SyncResult {
 	res := make(chan SyncResult, 1)
@@ -68,6 +108,15 @@ func (r *Runner) ExecuteSync(ctx context.Context, args []string) <-chan SyncResu
 			}
 			return
 		}
+		absPath, cleanup, err := prepareScriptForExecution(absPath)
+		if err != nil {
+			res <- SyncResult{
+				Error:    fmt.Errorf("failed to prepare script %s: %w", r.DefaultScriptPath, err),
+				ExitCode: 1,
+			}
+			return
+		}
+		defer cleanup()
 		scriptDir := filepath.Dir(absPath)
 		scriptBase := filepath.Base(absPath)
 

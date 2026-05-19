@@ -9,16 +9,24 @@ import (
 	"skillsync/tui/internal/diff"
 	"skillsync/tui/internal/parser"
 	"skillsync/tui/internal/runner"
+	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/types"
 )
 
 type SyncOptions struct {
 	DryRun     bool
 	ProgressCb func(stage string, done, total int)
+	Storage    *storage.Service
 }
 
 func Sync(root string, opts SyncOptions) (*runner.SyncReport, error) {
 	report := &runner.SyncReport{}
+
+	if info, err := os.Stat(root); err != nil {
+		return report, err
+	} else if !info.IsDir() {
+		return report, fmt.Errorf("root is not a directory: %s", root)
+	}
 
 	skills, err := DiscoverSkills(root)
 	if err != nil {
@@ -64,6 +72,16 @@ func Sync(root string, opts SyncOptions) (*runner.SyncReport, error) {
 		opts.ProgressCb("Updating AGENTS.md", 2, 8)
 	}
 
+	if opts.Storage != nil && !opts.DryRun {
+		absRoot, err := filepath.Abs(root)
+		if err != nil {
+			absRoot = root
+		}
+		if err := opts.Storage.RegisterProject(absRoot); err != nil {
+			return report, fmt.Errorf("failed to register project: %w", err)
+		}
+	}
+
 	return report, nil
 }
 
@@ -83,7 +101,7 @@ func DiscoverSkills(root string) ([]types.Skill, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		
+
 		skillPath := filepath.Join(skillsDir, entry.Name(), "SKILL.md")
 		if _, err := os.Stat(skillPath); err == nil {
 			skill, err := parser.Parse(skillPath)
@@ -99,9 +117,8 @@ func DiscoverSkills(root string) ([]types.Skill, error) {
 func AggregateMetadata(skills []types.Skill, targetScope string) []types.Skill {
 	var matched []types.Skill
 	for _, s := range skills {
-		if s.Metadata.Scope == targetScope {
+		if strings.Contains(s.Metadata.Scope, targetScope) {
 			matched = append(matched, s)
-			break
 		}
 	}
 	return matched
@@ -120,13 +137,53 @@ func UpdateAgentsMarkdown(root string, skills []types.Skill, dryRun bool) error 
 	}
 	
 	lines := strings.Split(string(content), "\n")
+	hasAvailable := false
+	hasAutoInvoke := false
+	for _, line := range lines {
+		if strings.HasPrefix(line, "## Available Skills") {
+			hasAvailable = true
+		}
+		if strings.HasPrefix(line, "### Auto-invoke Skills") {
+			hasAutoInvoke = true
+		}
+	}
+	if !hasAvailable || !hasAutoInvoke {
+		return fmt.Errorf("required headers missing in AGENTS.md: need '## Available Skills' and '### Auto-invoke Skills'")
+	}
+
 	var out []string
 	inSection := false
+	inAvailableSection := false
 	sectionReplaced := false
-	
+
 	for i := 0; i < len(lines); i++ {
 		line := lines[i]
+
+		if strings.HasPrefix(line, "## Available Skills") {
+			inAvailableSection = true
+			out = append(out, line)
+			out = append(out, "")
+			out = append(out, "| Skill | Description | Location |")
+			out = append(out, "| ----- | ----------- | -------- |")
+
+			for _, s := range skills {
+				rel, _ := filepath.Rel(root, s.Path)
+				desc := s.Metadata.Description
+				if desc == "" {
+					desc = "—"
+				}
+				// Truncate description for table if too long
+				if len(desc) > 100 {
+					desc = desc[:97] + "..."
+				}
+				out = append(out, fmt.Sprintf("| `%s` | %s | [%s](%s) |", s.Name, desc, filepath.Base(s.Path), filepath.ToSlash(rel)))
+			}
+			sectionReplaced = true
+			continue
+		}
+
 		if strings.HasPrefix(line, "### Auto-invoke Skills") {
+			inAvailableSection = false
 			inSection = true
 			out = append(out, line)
 			out = append(out, "")
@@ -148,9 +205,10 @@ func UpdateAgentsMarkdown(root string, skills []types.Skill, dryRun bool) error 
 			continue
 		}
 		
-		if inSection {
-			if strings.HasPrefix(line, "### ") {
+		if inSection || inAvailableSection {
+			if strings.HasPrefix(line, "### ") || (inAvailableSection && strings.HasPrefix(line, "## ")) {
 				inSection = false
+				inAvailableSection = false
 				out = append(out, "")
 				out = append(out, line)
 			}

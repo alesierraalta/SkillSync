@@ -16,7 +16,6 @@ func TestProjectsRefresh(t *testing.T) {
 
 	m := NewModel(NewBackend(storage.NewService("")))
 	m.Screen = ScreenProjects
-	m.storageService = storage.NewService("") // Uses SKILLSYNC_HOME
 
 	// Setup a project on disk
 	tmpDir := t.TempDir()

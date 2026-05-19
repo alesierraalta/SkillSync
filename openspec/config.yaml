@@ -1,0 +1,6 @@
+project: skillsync-tui
+quality:
+  strict_tdd: true
+  test_command: "go test ./cmd/synck -count=1"
+review:
+  max_changed_lines: 400

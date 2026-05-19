@@ -1,0 +1,4 @@
+{
+  "signature": "cmd/synck/main.go::📐 Cascade errors in 1 neighbor file(s) — fix before finishing turn:\n<diagnostics file=\"cmd/synck/main_test.go\" reason=\"fallback\">\n  line 242, col 11 rule=cascade:UndeclaredName: undefined: findProjectRoot\n  line 426, col 9 rule=cascade:UndeclaredName: undefined: renderReport\n  line 442, col 9 rule=cascade:UndeclaredName: undefined: renderReport\n  line 464, col 9 rule=cascade:UndeclaredName: undefined: renderReport\n  line 495, col 12 rule=cascade:UndeclaredName: undefined: renderReport\n  line 496, col 13 rule=cascade:UndeclaredName: undefined: renderReport\n</diagnostics>",
+  "sessionId": "lens-mpbi2zs8-10ee5141"
+}

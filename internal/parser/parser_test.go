@@ -36,6 +36,12 @@ func TestParseAndSave(t *testing.T) {
 	if skill.Metadata.Scope != "project" {
 		t.Errorf("Expected scope 'project', got '%s'", skill.Metadata.Scope)
 	}
+	if skill.ID == "" {
+		t.Error("Expected skill.ID to be populated from path")
+	}
+	if filepath.ToSlash(path) != skill.ID {
+		t.Errorf("Expected skill.ID %q, got %q", filepath.ToSlash(path), skill.ID)
+	}
 
 	// Modify
 	skill.Metadata.Scope = "personal"
@@ -231,6 +237,9 @@ metadata:
 	if skill.Metadata.Scope != "root" {
 		t.Errorf("Expected scope 'root', got %q", skill.Metadata.Scope)
 	}
+	if filepath.ToSlash(path) != skill.ID {
+		t.Errorf("Expected skill.ID %q, got %q", filepath.ToSlash(path), skill.ID)
+	}
 }
 
 func TestParseFlexibleScope(t *testing.T) {
@@ -276,5 +285,49 @@ func TestParseFlexibleScope(t *testing.T) {
 				t.Errorf("Scope = %q, want %q", skill.Metadata.Scope, tt.expScope)
 			}
 		})
+	}
+}
+
+func TestFormat(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "SKILL.md")
+	content := `# Prefix
+---
+# Comment
+scope: original
+---
+Body content`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	skill, err := Parse(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Modify
+	skill.Metadata.Scope = "updated"
+	skill.RawBody = "Updated body"
+
+	formatted, err := Format(skill)
+	if err != nil {
+		t.Fatalf("Format failed: %v", err)
+	}
+
+	if !strings.Contains(formatted, "# Prefix") {
+		t.Error("Prefix lost")
+	}
+	if !strings.Contains(formatted, "# Comment") {
+		t.Error("YAML comment lost")
+	}
+	if !strings.Contains(formatted, "scope: updated") {
+		t.Error("Scope not updated in formatted string")
+	}
+	if !strings.Contains(formatted, "Updated body") {
+		t.Error("Body not updated in formatted string")
+	}
+	if !strings.HasPrefix(formatted, "# Prefix") {
+		t.Errorf("Format should start with prefix, got: %q", formatted)
 	}
 }
