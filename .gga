@@ -1,0 +1,9 @@
+# GGA Configuration — skillsync/TUI
+# Provider-agnostic code review using opencode
+PROVIDER="opencode:opencode/deepseek-v4-flash-free"
+# MODEL is embedded in PROVIDER via opencode:<model> syntax
+RULES_FILE=".gga-rules.md"
+FILE_PATTERNS="*.go,*.md,*.mod,*.sum,.gga-rules.md"
+EXCLUDE_PATTERNS="*_test.go"
+STRICT_MODE="true"
+TIMEOUT="300"
