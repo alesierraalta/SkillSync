@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+	"skillsync/tui/internal/remove"
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/syncengine"
@@ -29,6 +30,7 @@ type MockAppService struct {
 	RegisterOpenCodeToolsFunc  func() error
 	RegisterSkillManagerAgentFunc func() error
 	EnsureAgentsMDFunc        func() error
+	RemoveSkillFunc           func(name string, opts remove.Options) error
 }
 
 func (m *MockAppService) DiscoverSkills(rootPath string) ([]string, error) {
@@ -103,6 +105,13 @@ func (m *MockAppService) RegisterSkillManagerAgent() error {
 func (m *MockAppService) EnsureAgentsMD() error {
 	if m.EnsureAgentsMDFunc != nil {
 		return m.EnsureAgentsMDFunc()
+	}
+	return nil
+}
+
+func (m *MockAppService) RemoveSkill(name string, opts remove.Options) error {
+	if m.RemoveSkillFunc != nil {
+		return m.RemoveSkillFunc(name, opts)
 	}
 	return nil
 }

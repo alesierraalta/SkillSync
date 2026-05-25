@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
@@ -181,11 +182,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case statusMsg:
+		m.StatusMsg = string(msg)
 		if m.Screen == ScreenList {
 			cmd = m.List.list.NewStatusMessage(string(msg))
 			return m, cmd
 		}
-		m.StatusMsg = string(msg)
 		return m, nil
 
 	case errorMsg:
@@ -207,6 +208,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.StatusMsg = "OpenCode synchronization successful"
 		}
+		return m, nil
+
+	case deleteSkillFinishedMsg:
+		updated, _ := m.deleteConfirm.Update(msg)
+		m.deleteConfirm = updated
+		if m.deleteConfirm.success {
+			m.Screen = m.PrevScreen
+			m.StatusMsg = fmt.Sprintf("Skill '%s' deleted.", msg.name)
+			m.resetDeleteConfirm()
+			return m, m.loadSkills()
+		}
+		// On error, stay on confirm screen to show error
 		return m, nil
 	}
 
@@ -237,6 +250,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleStorageKeys(msg)
 	case ScreenProjects:
 		return m.handleProjectsKeys(msg)
+	case ScreenDeleteConfirm:
+		return m.handleDeleteConfirmKeys(msg)
 	}
 
 	return m, nil
@@ -343,6 +358,16 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.startSync()
 	case "s":
 		return m, m.saveToStorageCmd()
+	case "d":
+		if m.List.selected != nil {
+			name := m.List.selected.Name
+			if !strings.HasPrefix(m.List.selected.ID, "virtual:") && !isCoreSkill(name) {
+				m.deleteConfirm.skillName = name
+				m.PrevScreen = m.Screen
+				m.Screen = ScreenDeleteConfirm
+				return m, nil
+			}
+		}
 	case "esc":
 		m.Screen = ScreenHome
 		return m, nil
@@ -362,11 +387,10 @@ func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if isReadOnly {
 			return m, nil
 		}
-		// Explicitly force values into selected before saving,
-		// just in case they aren't syncing.
 		m.selected.Metadata.Description = m.inputs[0].Value()
 		m.selected.Metadata.Scope = m.inputs[1].Value()
 		m.selected.RawBody = m.inputs[2].Value()
+		m.Screen = m.PrevScreen
 		return m, m.saveSkill()
 	case "tab":
 		if m.inputs[0].Focused() {
@@ -597,7 +621,10 @@ func (m Model) saveSkill() tea.Cmd {
 
 	return func() tea.Msg {
 		_ = m.backend.SaveSkill(m.selected.Path, m.selected)
-		return m.loadSkills()()
+		return tea.Batch(
+			func() tea.Msg { return statusMsg(fmt.Sprintf("Skill '%s' guardada correctamente", m.selected.Name)) },
+			m.loadSkills(),
+		)()
 	}
 }
 
@@ -660,10 +687,37 @@ func (m Model) handleStorageKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.SyncFinished = false
 			return m, m.installFromStorageAndSyncCmd(itm.stored)
 		}
+	case "d":
+		if itm, ok := m.storageList.SelectedItem().(storageItem); ok {
+			name := itm.stored.Metadata.SkillName
+			if !isCoreSkill(name) {
+				m.deleteConfirm.skillName = name
+				m.PrevScreen = m.Screen
+				m.Screen = ScreenDeleteConfirm
+				return m, nil
+			}
+		}
 	}
 
 	var cmd tea.Cmd
 	m.storageList, cmd = m.storageList.Update(msg)
+	return m, cmd
+}
+
+func (m Model) handleDeleteConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	updated, cmd := m.deleteConfirm.Update(msg)
+	m.deleteConfirm = updated
+
+	// User cancelled (n/esc) — go back
+	if !m.deleteConfirm.deleting && !m.deleteConfirm.success && m.deleteConfirm.err == nil {
+		// Only go back if a key was actually pressed (not an unrelated msg)
+		if msg.String() == "n" || msg.String() == "N" || msg.String() == "esc" {
+			m.Screen = m.PrevScreen
+			m.resetDeleteConfirm()
+			return m, nil
+		}
+	}
+
 	return m, cmd
 }
 

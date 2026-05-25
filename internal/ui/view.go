@@ -50,6 +50,10 @@ func (m Model) View() string {
 
 		content = m.projectsView()
 
+	case ScreenDeleteConfirm:
+
+		content = m.deleteConfirmView()
+
 	}
 
 	if m.Screen == ScreenSyncing {
@@ -233,4 +237,10 @@ func (m Model) projectsView() string {
 		return s + lipgloss.NewStyle().MarginLeft(4).Render("No se encontraron proyectos. Presioná '4' para sincronizar este proyecto y registrarlo.")
 	}
 	return s + docStyle.Render(m.projectList.View())
+}
+
+func (m Model) deleteConfirmView() string {
+	s := titleStyle.Render("Delete Skill") + "\n\n"
+	s += docStyle.Render(m.deleteConfirm.View())
+	return s
 }

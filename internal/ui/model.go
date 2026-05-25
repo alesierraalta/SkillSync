@@ -36,6 +36,7 @@ const (
 	ScreenInstaller
 	ScreenStorage
 	ScreenProjects
+	ScreenDeleteConfirm
 )
 
 type Model struct {
@@ -65,6 +66,9 @@ type Model struct {
 
 	// Projects State
 	projectList list.Model
+
+	// Delete Confirm State
+	deleteConfirm DeleteConfirmModel
 
 	// Service Layer
 	backend AppService
@@ -144,6 +148,7 @@ func NewModel(backend AppService) Model {
 		Progress:           progress.New(progress.WithDefaultGradient()),
 		Installer:          NewInstallerModel(backend, "."),
 		List:               NewListModel(backend, "."),
+		deleteConfirm:      NewDeleteConfirmModel(backend),
 		backend:            backend,
 	}
 }
@@ -163,6 +168,7 @@ func (m Model) GetKeyBindings() []KeyBinding {
 			{Key: "e", Help: "edit skill"},
 			{Key: "s", Help: "save globally"},
 			{Key: "y", Help: "sync"},
+			{Key: "d", Help: "delete skill"},
 		}
 	case ScreenDetail:
 		return []KeyBinding{
@@ -188,11 +194,17 @@ func (m Model) GetKeyBindings() []KeyBinding {
 			{Key: "esc", Help: "back"},
 			{Key: "up/down", Help: "navigate"},
 			{Key: "i", Help: "install & sync"},
+			{Key: "d", Help: "delete from storage"},
 		}
 	case ScreenProjects:
 		return []KeyBinding{
 			{Key: "esc/q", Help: "back"},
 			{Key: "r", Help: "refresh projects"},
+		}
+	case ScreenDeleteConfirm:
+		return []KeyBinding{
+			{Key: "y", Help: "confirm delete"},
+			{Key: "n/esc", Help: "cancel"},
 		}
 	default:
 		return []KeyBinding{
@@ -203,5 +215,19 @@ func (m Model) GetKeyBindings() []KeyBinding {
 
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.List.Init(), m.loadSkills(), instantiateEcosystemCmd(m.backend, m.rootPath))
+}
+
+// isCoreSkill returns true if the given skill name is protected.
+func isCoreSkill(name string) bool {
+	switch name {
+	case "skill-creator", "skill-sync", "find-skills":
+		return true
+	}
+	return false
+}
+
+// resetDeleteConfirm clears the delete confirmation state.
+func (m *Model) resetDeleteConfirm() {
+	m.deleteConfirm = NewDeleteConfirmModel(m.backend)
 }
 

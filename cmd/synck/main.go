@@ -12,6 +12,7 @@ import (
 	"skillsync/tui/internal/install"
 	"skillsync/tui/internal/opencode"
 	"skillsync/tui/internal/parser"
+	"skillsync/tui/internal/remove"
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/syncengine"
@@ -60,6 +61,8 @@ func run(args []string) error {
 			return nil
 		case "setup-opencode":
 			return handleSetupOpenCode()
+		case "remove":
+			return handleRemove(actualArgs[1:])
 		default:
 			if !strings.HasPrefix(actualArgs[0], "-") {
 				return handleSkillSubcommand(actualArgs[0])
@@ -624,6 +627,94 @@ func handleSetupOpenCode() error {
 
 	fmt.Println("✅ OpenCode integration complete.")
 	fmt.Println("   Restart OpenCode or run 'synck sync' to see updated commands.")
+	return nil
+}
+
+// handleRemove parses and runs the remove subcommand.
+// Supports: synck remove [--local] [--force] <skill-name>
+//           synck remove <skill-name> [--local] [--force]
+func handleRemove(args []string) error {
+	var name string
+	local := false
+	force := false
+
+	for _, arg := range args {
+		switch arg {
+		case "--local":
+			local = true
+		case "--force":
+			force = true
+		case "--help", "-h":
+			fmt.Println("usage: synck remove [--local] [--force] <skill-name>")
+			return nil
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return fmt.Errorf("unknown flag: %s", arg)
+			}
+			if name == "" {
+				name = arg
+			} else {
+				return fmt.Errorf("unexpected argument: %s", arg)
+			}
+		}
+	}
+
+	if name == "" {
+		return fmt.Errorf("usage: synck remove [--local] [--force] <skill-name>")
+	}
+
+	return runRemove(name, local, force)
+}
+
+// runRemove performs the full skill removal flow.
+// If force is false, it prompts for confirmation via stdin.
+func runRemove(name string, local, force bool) error {
+	// If not --force, prompt for confirmation
+	if !force {
+		fmt.Printf("Remove skill '%s'? [y/N]: ", name)
+		var response string
+		_, err := fmt.Scanln(&response)
+		if err != nil || (response != "y" && response != "Y") {
+			fmt.Println("Cancelled.")
+			return nil
+		}
+	}
+
+	// Reject core skills first (before checking existence)
+	if remove.IsCoreSkill(name) {
+		return fmt.Errorf("cannot remove core skill %q", name)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	root := findProjectRoot(cwd)
+	if root == "" {
+		return fmt.Errorf("could not find project root (missing .agents or .agent directory)")
+	}
+
+	// Check that the skill actually exists
+	skillDir := filepath.Join(root, ".agents", "skills", name)
+	if _, err := os.Stat(skillDir); os.IsNotExist(err) {
+		return fmt.Errorf("skill %q not found", name)
+	}
+
+	s := &remove.Service{
+		RootPath: root,
+		Storage:  storage.NewService(""),
+	}
+
+	if err := s.RemoveByID(name, remove.Options{Local: local}); err != nil {
+		return fmt.Errorf("failed to remove skill %q: %w", name, err)
+	}
+
+	fmt.Printf("Skill '%s' deleted.\n", name)
+
+	// Post-delete regeneration is best-effort; non-fatal warnings
+	if err := ui.RegenerateAfterDelete(root); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️  Warning: post-delete regeneration reported errors: %v\n", err)
+	}
 	return nil
 }
 

@@ -67,6 +67,10 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = m.list.SetItems(items)
 		return m, cmd
 
+	case tea.WindowSizeMsg:
+		m.list, cmd = m.list.Update(msg)
+		return m, cmd
+
 	case tea.KeyMsg:
 		if m.searchFocused {
 			switch msg.String() {
@@ -108,7 +112,10 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
-	return m, nil
+	// Forward any unhandled message to the underlying list model
+	// (status messages, clear-status ticks, etc.)
+	m.list, cmd = m.list.Update(msg)
+	return m, cmd
 }
 
 type editRequestMsg struct {

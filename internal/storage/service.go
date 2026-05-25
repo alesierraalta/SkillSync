@@ -28,6 +28,20 @@ func NewService(root string) *Service {
 	return &Service{RootPath: root}
 }
 
+// Delete removes a skill's directory and all its contents from global storage.
+// Returns ErrSkillNotFound if the directory does not exist.
+// Returns an error if the skill name is empty or a filesystem error occurs.
+func (s *Service) Delete(name string) error {
+	if name == "" {
+		return fmt.Errorf("skill name cannot be empty")
+	}
+	skillDir := filepath.Join(s.RootPath, name)
+	if _, err := os.Stat(skillDir); os.IsNotExist(err) {
+		return fmt.Errorf("skill %q not found: %w", name, ErrSkillNotFound)
+	}
+	return os.RemoveAll(skillDir)
+}
+
 // Save persists a skill and its metadata to global storage
 func (s *Service) Save(skill *types.Skill, metadata StoredMetadata) error {
 	skillDir := filepath.Join(s.RootPath, skill.Name)

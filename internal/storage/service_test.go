@@ -140,6 +140,80 @@ func TestSavePersistsFullFormattedContent(t *testing.T) {
 }
 
 
+func TestDelete(t *testing.T) {
+	t.Run("deletes stored skill directory", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		s := &Service{RootPath: tmpDir}
+
+		skillDir := filepath.Join(tmpDir, "my-skill")
+		if err := os.MkdirAll(skillDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("# content"), 0644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(skillDir, "METADATA.json"), []byte(`{}`), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := s.Delete("my-skill")
+		if err != nil {
+			t.Fatalf("Delete failed: %v", err)
+		}
+
+		if _, err := os.Stat(skillDir); !os.IsNotExist(err) {
+			t.Error("expected skill directory to be removed")
+		}
+	})
+
+	t.Run("removes nested subdirectories recursively", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		s := &Service{RootPath: tmpDir}
+
+		// Create skill with nested structure
+		if err := os.MkdirAll(filepath.Join(tmpDir, "deep-skill", "sub", "nested"), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(tmpDir, "deep-skill", "sub", "nested", "file.txt"), []byte("deep"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		err := s.Delete("deep-skill")
+		if err != nil {
+			t.Fatalf("Delete failed: %v", err)
+		}
+
+		// Verify entire tree is gone
+		if _, err := os.Stat(filepath.Join(tmpDir, "deep-skill")); !os.IsNotExist(err) {
+			t.Error("expected entire skill tree to be removed")
+		}
+		// Verify storage root still exists
+		if _, err := os.Stat(tmpDir); os.IsNotExist(err) {
+			t.Error("expected storage root to still exist")
+		}
+	})
+
+	t.Run("returns error for non-existent skill", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		s := &Service{RootPath: tmpDir}
+
+		err := s.Delete("nonexistent")
+		if err == nil {
+			t.Fatal("expected error for non-existent skill")
+		}
+	})
+
+	t.Run("returns error for empty name", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		s := &Service{RootPath: tmpDir}
+
+		err := s.Delete("")
+		if err == nil {
+			t.Fatal("expected error for empty name")
+		}
+	})
+}
+
 func TestNewServiceIsolation(t *testing.T) {
 	t.Run("prioritizes SKILLSYNC_HOME", func(t *testing.T) {
 		tmpHome := t.TempDir()

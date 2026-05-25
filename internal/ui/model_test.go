@@ -6,6 +6,9 @@ import (
 	"skillsync/tui/internal/types"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/bubbles/list"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestItemTitle(t *testing.T) {
@@ -162,5 +165,101 @@ func TestGetKeyBindings(t *testing.T) {
 
 	if !found {
 		t.Error("expected keybinding 'i' not found for ScreenStorage")
+	}
+}
+
+func TestDeleteKeybinding_VirtualSkill(t *testing.T) {
+	m := NewModel(NewBackend(storage.NewService("")))
+	m.Screen = ScreenList
+	m.List.selected = &types.Skill{
+		ID:   "virtual:agents",
+		Name: "★ AGENTS.md",
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	result := updated.(Model)
+
+	if result.Screen == ScreenDeleteConfirm {
+		t.Error("'d' on virtual skill should not transition to ScreenDeleteConfirm")
+	}
+	if result.Screen != ScreenList {
+		t.Errorf("expected ScreenList after 'd' on virtual, got Screen=%d", result.Screen)
+	}
+}
+
+func TestDeleteKeybinding_CoreSkill(t *testing.T) {
+	m := NewModel(NewBackend(storage.NewService("")))
+	m.Screen = ScreenList
+	m.List.selected = &types.Skill{
+		ID:   "skill-creator",
+		Name: "skill-creator",
+		Path: ".agents/skills/skill-creator/SKILL.md",
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	result := updated.(Model)
+
+	if result.Screen == ScreenDeleteConfirm {
+		t.Error("'d' on core skill should not transition to ScreenDeleteConfirm")
+	}
+	if result.Screen != ScreenList {
+		t.Errorf("expected ScreenList after 'd' on core, got Screen=%d", result.Screen)
+	}
+}
+
+func TestDeleteKeybinding_RegularSkill(t *testing.T) {
+	m := NewModel(NewBackend(storage.NewService("")))
+	m.Screen = ScreenList
+	m.List.selected = &types.Skill{
+		ID:   "my-skill",
+		Name: "my-skill",
+		Path: ".agents/skills/my-skill/SKILL.md",
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	result := updated.(Model)
+
+	if result.Screen != ScreenDeleteConfirm {
+		t.Errorf("'d' on regular skill should transition to ScreenDeleteConfirm, got Screen=%d", result.Screen)
+	}
+	if result.deleteConfirm.skillName != "my-skill" {
+		t.Errorf("expected deleteConfirm.skillName='my-skill', got %q", result.deleteConfirm.skillName)
+	}
+}
+
+func TestDeleteKeybinding_NoSelection(t *testing.T) {
+	m := NewModel(NewBackend(storage.NewService("")))
+	m.Screen = ScreenList
+	// no selection set
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	result := updated.(Model)
+
+	if result.Screen == ScreenDeleteConfirm {
+		t.Error("'d' with no selection should not transition to ScreenDeleteConfirm")
+	}
+}
+
+func TestDeleteKeybinding_StorageScreen(t *testing.T) {
+	m := NewModel(NewBackend(storage.NewService("")))
+	m.Screen = ScreenStorage
+
+	// Populate the storage list with items
+	item := storageItem{stored: storage.StoredSkill{
+		ID: "stored-skill",
+		Metadata: storage.StoredMetadata{
+			SkillName: "stored-skill",
+		},
+	}}
+	m.storageList.SetItems([]list.Item{item})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	result := updated.(Model)
+
+	if result.Screen != ScreenDeleteConfirm {
+		t.Errorf("'d' on storage screen should transition to ScreenDeleteConfirm, got Screen=%d", result.Screen)
+	}
+	if result.deleteConfirm.skillName != "stored-skill" {
+		t.Errorf("expected deleteConfirm.skillName='stored-skill', got %q", result.deleteConfirm.skillName)
 	}
 }

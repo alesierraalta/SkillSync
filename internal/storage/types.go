@@ -1,6 +1,12 @@
 package storage
 
-import "time"
+import (
+	"errors"
+	"time"
+)
+
+// ErrSkillNotFound is returned when a skill is not found in storage.
+var ErrSkillNotFound = errors.New("skill not found in storage")
 
 // StoredMetadata represents sidecar metadata for a stored skill
 type StoredMetadata struct {

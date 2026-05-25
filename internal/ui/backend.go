@@ -9,6 +9,7 @@ import (
 	"skillsync/tui/internal/discovery"
 	"skillsync/tui/internal/opencode"
 	"skillsync/tui/internal/parser"
+	"skillsync/tui/internal/remove"
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/syncengine"
@@ -36,6 +37,8 @@ type AppService interface {
 	RegisterOpenCodeTools() error
 	RegisterSkillManagerAgent() error
 	EnsureAgentsMD() error
+
+	RemoveSkill(name string, opts remove.Options) error
 }
 
 // Backend implements AppService using concrete implementations.
@@ -197,6 +200,23 @@ func (b *Backend) installCoreSharedLib() error {
 	}
 
 	return os.WriteFile(utilsPath, repaired, 0644)
+}
+
+func (b *Backend) RemoveSkill(name string, opts remove.Options) error {
+	svc := remove.Service{
+		RootPath: ".",
+		Storage:  b.storage,
+	}
+	if err := svc.RemoveByID(name, opts); err != nil {
+		return err
+	}
+
+	// Post-delete regeneration is best-effort; errors are non-fatal
+	if err := RegenerateAfterDelete("."); err != nil {
+		// Log the error but don't revert the deletion
+		_ = err
+	}
+	return nil
 }
 
 func (b *Backend) activeProviders() []string {
