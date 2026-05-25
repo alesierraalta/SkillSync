@@ -3,9 +3,9 @@ package ui
 import (
 	"fmt"
 
-	"skillsync/tui/internal/remove"
-
 	tea "github.com/charmbracelet/bubbletea"
+
+	"skillsync/tui/internal/remove"
 )
 
 // deleteSkillFinishedMsg is sent when the deletion operation completes.

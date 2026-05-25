@@ -223,11 +223,11 @@ func handleSyncLegacy(args []string) error {
 func handleSyncOpenCode(args []string) error {
 	// Parse flags for sync-opencode command
 	opts := opencode.Options{}
-	
+
 	f := flag.NewFlagSet("sync-opencode", flag.ContinueOnError)
 	prune := f.Bool("prune", false, "Remove orphaned skills from .opencode/skills/")
 	dryRun := f.Bool("dry-run", false, "Show what would be changed without writing")
-	
+
 	if err := f.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return nil
@@ -632,7 +632,8 @@ func handleSetupOpenCode() error {
 
 // handleRemove parses and runs the remove subcommand.
 // Supports: synck remove [--local] [--force] <skill-name>
-//           synck remove <skill-name> [--local] [--force]
+//
+//	synck remove <skill-name> [--local] [--force]
 func handleRemove(args []string) error {
 	var name string
 	local := false
@@ -687,7 +688,7 @@ func runRemove(name string, local, force bool) error {
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		return err
+		return fmt.Errorf("get working directory: %w", err)
 	}
 	root := findProjectRoot(cwd)
 	if root == "" {
@@ -787,4 +788,3 @@ func renderReport(report *runner.SyncReport, verbose bool) string {
 
 	return b.String()
 }
-

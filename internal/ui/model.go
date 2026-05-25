@@ -14,8 +14,6 @@ import (
 	"skillsync/tui/internal/types"
 )
 
-
-
 type Screen int
 
 type syncFinishedMsg struct {
@@ -40,21 +38,21 @@ const (
 )
 
 type Model struct {
-	Screen         Screen
-	PrevScreen     Screen
-	Width          int
-	Height         int
-	HomeCursor     int
-	StatusMsg      string
-	Progress       progress.Model
-	SyncFailed     bool
-	SyncFinished   bool
-	syncReport     *runner.SyncReport
-	err            error
-	rootPath       string
-	inputs         []textarea.Model
-	syncOutput     string
-	selected       *types.Skill
+	Screen       Screen
+	PrevScreen   Screen
+	Width        int
+	Height       int
+	HomeCursor   int
+	StatusMsg    string
+	Progress     progress.Model
+	SyncFailed   bool
+	SyncFinished bool
+	syncReport   *runner.SyncReport
+	err          error
+	rootPath     string
+	inputs       []textarea.Model
+	syncOutput   string
+	selected     *types.Skill
 
 	// Sub-models
 	Installer InstallerModel
@@ -73,7 +71,6 @@ type Model struct {
 	// Service Layer
 	backend AppService
 }
-
 
 type item struct {
 	skill types.Skill
@@ -140,16 +137,16 @@ func NewModel(backend AppService) Model {
 	pl.Title = "Proyectos Sincronizados"
 
 	return Model{
-		Screen:             ScreenHome,
-		PrevScreen:         ScreenHome,
-		storageList:        sl,
-		projectList:        pl,
-		rootPath:           ".",
-		Progress:           progress.New(progress.WithDefaultGradient()),
-		Installer:          NewInstallerModel(backend, "."),
-		List:               NewListModel(backend, "."),
-		deleteConfirm:      NewDeleteConfirmModel(backend),
-		backend:            backend,
+		Screen:        ScreenHome,
+		PrevScreen:    ScreenHome,
+		storageList:   sl,
+		projectList:   pl,
+		rootPath:      ".",
+		Progress:      progress.New(progress.WithDefaultGradient()),
+		Installer:     NewInstallerModel(backend, "."),
+		List:          NewListModel(backend, "."),
+		deleteConfirm: NewDeleteConfirmModel(backend),
+		backend:       backend,
 	}
 }
 
@@ -230,4 +227,3 @@ func isCoreSkill(name string) bool {
 func (m *Model) resetDeleteConfirm() {
 	m.deleteConfirm = NewDeleteConfirmModel(m.backend)
 }
-

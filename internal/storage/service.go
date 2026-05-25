@@ -91,7 +91,7 @@ func (s *Service) List() ([]StoredSkill, error) {
 
 		skillID := entry.Name()
 		metaPath := filepath.Join(s.RootPath, skillID, "METADATA.json")
-		
+
 		metaBytes, err := os.ReadFile(metaPath)
 		if err != nil {
 			continue // Skip if unreadable or missing

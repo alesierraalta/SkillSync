@@ -101,8 +101,8 @@ func (s *Service) RemoveByID(name string, opts Options) error {
 		errs = append(errs, fmt.Errorf("lock: %w", err))
 	}
 
-	// Step 6: Regenerate AGENTS.md — TODO: will be wired in PR2
-	// Step 7: Regenerate OpenCode tools — TODO: will be wired in PR2
+	// Steps 6-7: AGENTS.md + OpenCode regeneration handled at caller level
+	// (Backend.RemoveSkill and runRemove call ui.RegenerateAfterDelete)
 
 	if len(errs) > 0 {
 		return &MultiError{Errors: errs}
