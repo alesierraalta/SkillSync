@@ -141,7 +141,7 @@ func (m InstallerModel) LicenseDisclosureView() string {
 	title := titleStyle.Render("AUTOSKILLS LICENSE DISCLOSURE")
 
 	content := "\nThis action will execute 'midudev/autoskills' via npx.\n\n" +
-		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208")).Render("LICENSE: Creative Commons Attribution-NonCommercial 4.0 International (CC-BY-NC-4.0)") + "\n\n" +
+		warningNoticeStyle.Render("LICENSE: Creative Commons Attribution-NonCommercial 4.0 International (CC-BY-NC-4.0)") + "\n\n" +
 		"By proceeding, you acknowledge that this tool is for NON-COMMERCIAL use only.\n" +
 		"The discovery process will analyze your project structure to suggest relevant skills.\n\n" +
 		"Do you accept and want to proceed? (y/n)"

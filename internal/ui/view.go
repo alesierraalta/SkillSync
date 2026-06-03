@@ -150,17 +150,14 @@ func (m Model) detailView() string {
 
 		label := labels[i]
 
-		labelStyle := lipgloss.NewStyle().MarginLeft(2).Foreground(lipgloss.Color("240"))
-
+		labelStyle := labelMutedStyle
 		if m.inputs[i].Focused() {
-
-			labelStyle = labelStyle.Foreground(lipgloss.Color("205")).Bold(true)
-
+			labelStyle = labelActiveStyle
 		}
 
 		s += labelStyle.Render(label) + "\n"
 
-		s += lipgloss.NewStyle().MarginLeft(2).Render(m.inputs[i].View()) + "\n"
+		s += inputWrapStyle.Render(m.inputs[i].View()) + "\n"
 
 	}
 
@@ -180,7 +177,7 @@ func (m Model) syncingView() string {
 	}
 	title := titleStyle.Render(titleText)
 
-	outputStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	outputStyle := syncOutputStyle
 	if m.SyncFailed {
 		outputStyle = errorStyle
 	}
