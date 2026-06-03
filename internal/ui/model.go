@@ -216,6 +216,7 @@ func (m Model) GetKeyBindings() []KeyBinding {
 			{Key: "esc/q", Help: "back"},
 			{Key: "up/down", Help: "select agent"},
 			{Key: "j/k", Help: "scroll"},
+			{Key: "enter", Help: "select"},
 		}
 	default:
 		return []KeyBinding{

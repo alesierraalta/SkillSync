@@ -46,16 +46,26 @@ func TestGetKeyBindings_AgentEcosystem(t *testing.T) {
 		t.Fatal("expected at least one key binding for ScreenAgentEcosystem")
 	}
 
-	// Must include esc/q and up/down hints
+	// Collect all key+help text for assertion
 	allText := ""
 	for _, b := range bindings {
 		allText += b.Key + " " + b.Help + " "
 	}
-	if !strings.Contains(strings.ToLower(allText), "esc") {
+	lower := strings.ToLower(allText)
+
+	// REQ-14: bindings MUST include esc, up/down, j/k, and enter
+	if !strings.Contains(lower, "esc") {
 		t.Errorf("expected esc binding, got bindings: %q", allText)
 	}
-	if !strings.Contains(strings.ToLower(allText), "up") && !strings.Contains(strings.ToLower(allText), "down") {
+	if !strings.Contains(lower, "up") && !strings.Contains(lower, "down") {
 		t.Errorf("expected up/down binding, got bindings: %q", allText)
+	}
+	if !strings.Contains(lower, "j") && !strings.Contains(lower, "k") {
+		t.Errorf("expected j/k binding, got bindings: %q", allText)
+	}
+	// REQ-14 explicitly requires Enter binding
+	if !strings.Contains(lower, "enter") {
+		t.Errorf("expected enter binding (REQ-14), got bindings: %q", allText)
 	}
 }
 

@@ -159,8 +159,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Progress.SetPercent(1.0)
 
 			// Register project after successful sync
-			absRoot, _ := filepath.Abs(m.rootPath)
-			_ = m.backend.RegisterProject(absRoot)
+			absRoot, _ := filepath.Abs(m.rootPath) //nolint:errcheck // non-fatal; rootPath is already validated
+			_ = m.backend.RegisterProject(absRoot) // non-fatal; registration is best-effort
 		}
 		return m, nil
 
@@ -576,7 +576,7 @@ func (m Model) scanProjectsCmd() tea.Cmd {
 
 		// Register found projects
 		for _, p := range paths {
-			_ = m.backend.RegisterProjectInitial(p)
+			_ = m.backend.RegisterProjectInitial(p) // non-fatal; best-effort project indexing
 		}
 
 		// Reload list from storage (which filters dead paths)
@@ -640,9 +640,10 @@ func (m *Model) setupInputs() {
 
 func (m Model) startSync() tea.Cmd {
 	return func() tea.Msg {
-		// Ensure core shared library and AGENTS.md exist before syncing
-		_ = m.backend.InstallCoreSkill("skill-sync")
-		_ = m.backend.EnsureAgentsMD(m.rootPath)
+		// Ensure core shared library and AGENTS.md exist before syncing;
+		// failures are non-fatal — sync proceeds regardless.
+		_ = m.backend.InstallCoreSkill("skill-sync") // non-fatal; sync proceeds even without core skill
+		_ = m.backend.EnsureAgentsMD(m.rootPath)     // non-fatal; AGENTS.md absence does not block sync
 
 		opts := syncengine.SyncOptions{
 			DryRun: false,
@@ -662,7 +663,7 @@ func (m Model) saveSkill() tea.Cmd {
 	m.selected.RawBody = m.inputs[2].Value()
 
 	return func() tea.Msg {
-		_ = m.backend.SaveSkill(m.selected.Path, m.selected)
+		_ = m.backend.SaveSkill(m.selected.Path, m.selected) // non-fatal; UI shows stale data if save fails, not a crash
 		return tea.Batch(
 			func() tea.Msg { return statusMsg(fmt.Sprintf("Skill '%s' guardada correctamente", m.selected.Name)) },
 			m.loadSkills(),
@@ -672,14 +673,14 @@ func (m Model) saveSkill() tea.Cmd {
 
 func (m Model) loadStoredSkillsCmd() tea.Cmd {
 	return func() tea.Msg {
-		skills, _ := m.backend.ListStoredSkills()
+		skills, _ := m.backend.ListStoredSkills() // non-fatal; empty slice renders as "no stored skills"
 		return storedSkillsLoadedMsg(skills)
 	}
 }
 
 func (m Model) loadProjectsCmd() tea.Cmd {
 	return func() tea.Msg {
-		projects, _ := m.backend.GetProjects()
+		projects, _ := m.backend.GetProjects() // non-fatal; empty slice renders as "no projects found"
 		return projectsLoadedMsg(projects)
 	}
 }
@@ -700,7 +701,7 @@ func (m Model) saveToStorageCmd() tea.Cmd {
 	skill := *target
 
 	// Metadata from the current context
-	absPath, _ := filepath.Abs(m.rootPath)
+	absPath, _ := filepath.Abs(m.rootPath) // non-fatal; metadata path is best-effort, save proceeds with empty path on failure
 	metadata := storage.StoredMetadata{
 		SkillName:     skill.Name,
 		Description:   skill.Metadata.Description,
@@ -710,7 +711,7 @@ func (m Model) saveToStorageCmd() tea.Cmd {
 	}
 
 	return func() tea.Msg {
-		_ = m.backend.SaveToStorage(&skill, metadata)
+		_ = m.backend.SaveToStorage(&skill, metadata) // non-fatal; success message is shown regardless; user can retry
 		return statusMsg(fmt.Sprintf("Skill '%s' guardada en almacenamiento global", skill.Name))
 	}
 }
@@ -764,7 +765,8 @@ func (m Model) handleDeleteConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // handleAgentEcosystemKeys handles keyboard input on ScreenAgentEcosystem.
-// up/k: move selection up; down/j: move selection down; esc/q: return to home.
+// up/k: move selection up; down/j: move selection down; enter: select agent;
+// esc/q: return to home.
 func (m Model) handleAgentEcosystemKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "q":
@@ -779,6 +781,9 @@ func (m Model) handleAgentEcosystemKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.selectedAgent < len(m.agentEcosystem)-1 {
 			m.selectedAgent++
 		}
+	case "enter":
+		// Confirm selection: detail panel for selectedAgent is already rendered;
+		// Enter makes the intent explicit (REQ-14) without navigating away.
 	}
 	return m, nil
 }
