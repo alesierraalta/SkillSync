@@ -5,6 +5,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"skillsync/tui/internal/agentdetect"
 	"skillsync/tui/internal/coreskills"
 	"skillsync/tui/internal/discovery"
 	"skillsync/tui/internal/opencode"
@@ -36,9 +38,12 @@ type AppService interface {
 	InstallCoreSkill(name string) error
 	RegisterOpenCodeTools() error
 	RegisterSkillManagerAgent() error
-	EnsureAgentsMD() error
+	EnsureAgentsMD(root string) error
 
 	RemoveSkill(name string, opts remove.Options) error
+
+	// DetectAgentEcosystem returns a read-only inventory of installed AI agent tools.
+	DetectAgentEcosystem() ([]agentdetect.AgentInfo, error)
 }
 
 // Backend implements AppService using concrete implementations.
@@ -307,11 +312,11 @@ func (b *Backend) parseSkill(path string) (*types.Skill, error) {
 
 func (b *Backend) getBaseCommandSkills() []types.Skill {
 	return []types.Skill{
-		{Name: "skill", Metadata: types.Metadata{Description: "Entry point for skill management", AutoInvoke: true}},
-		{Name: "find", Metadata: types.Metadata{Description: "Search and list existing skills", AutoInvoke: true}},
-		{Name: "create", Metadata: types.Metadata{Description: "Create a new agent skill from a prompt", AutoInvoke: true}},
-		{Name: "sync", Metadata: types.Metadata{Description: "Synchronize skills and update AGENTS.md/OPENCODE.md", AutoInvoke: true}},
-		{Name: "fullskills", Metadata: types.Metadata{Description: "Complete skill workflow", AutoInvoke: true}},
+		{Name: "skill", Metadata: types.Metadata{Description: "Entry point for skill management", AutoInvoke: []string{"skill"}}},
+		{Name: "find", Metadata: types.Metadata{Description: "Search and list existing skills", AutoInvoke: []string{"find"}}},
+		{Name: "create", Metadata: types.Metadata{Description: "Create a new agent skill from a prompt", AutoInvoke: []string{"create"}}},
+		{Name: "sync", Metadata: types.Metadata{Description: "Synchronize skills and update AGENTS.md/OPENCODE.md", AutoInvoke: []string{"sync"}}},
+		{Name: "fullskills", Metadata: types.Metadata{Description: "Complete skill workflow", AutoInvoke: []string{"fullskills"}}},
 	}
 }
 
@@ -333,10 +338,18 @@ func (b *Backend) RegisterSkillManagerAgent() error {
 	return err
 }
 
-func (b *Backend) EnsureAgentsMD() error {
-	agentsFile := "AGENTS.md"
+// DetectAgentEcosystem delegates to agentdetect.Detect().
+func (b *Backend) DetectAgentEcosystem() ([]agentdetect.AgentInfo, error) {
+	return agentdetect.Detect()
+}
+
+func (b *Backend) EnsureAgentsMD(root string) error {
+	if root == "" {
+		root = "."
+	}
+	agentsFile := filepath.Join(root, "AGENTS.md")
 	if _, err := os.Stat(agentsFile); os.IsNotExist(err) {
-		content := []byte("# Agent Skills\n\nThis document lists the AI skills available in the project.\n\n## Available Skills\n\n| Skill | Description | Location |\n| ----- | ----------- | -------- |\n")
+		content := []byte("# Agent Skills\n\nThis document lists the AI skills available in the project.\n\n## Available Skills\n\n| Skill | Description | Location |\n| ----- | ----------- | -------- |\n\n### Auto-invoke Skills\n\nWhen performing these actions, ALWAYS invoke the corresponding skill FIRST:\n\n| Action | Skill |\n| ------ | ----- |\n")
 		return os.WriteFile(agentsFile, content, 0644)
 	}
 	return nil

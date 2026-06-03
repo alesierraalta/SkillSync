@@ -54,6 +54,10 @@ func (m Model) View() string {
 
 		content = m.deleteConfirmView()
 
+	case ScreenAgentEcosystem:
+
+		content = m.agentEcosystemView()
+
 	}
 
 	if m.Screen == ScreenSyncing {
@@ -95,6 +99,7 @@ func (m Model) homeView() string {
 		"3. Almacenamiento de skills",
 		"4. Sincronizar con OpenCode",
 		"5. Proyectos",
+		"6. Agent Ecosystem",
 	}
 
 	var body string
@@ -242,5 +247,66 @@ func (m Model) projectsView() string {
 func (m Model) deleteConfirmView() string {
 	s := titleStyle.Render("Delete Skill") + "\n\n"
 	s += docStyle.Render(m.deleteConfirm.View())
+	return s
+}
+
+// agentEcosystemView renders the Agent Ecosystem screen.
+// It shows a list of detected AI agent tools on the left and a detail panel
+// for the selected agent (MCP servers + plugins) on the right.
+// Pure rendering — no IO, no mutations.
+func (m Model) agentEcosystemView() string {
+	title := titleStyle.Render("Agent Ecosystem")
+	s := title + "\n\n"
+
+	if len(m.agentEcosystem) == 0 {
+		s += "  No agents detected.\n"
+		return s
+	}
+
+	for i, agent := range m.agentEcosystem {
+		cursor := "  "
+		if m.selectedAgent == i {
+			cursor = "> "
+		}
+
+		// Status tag
+		statusTag := ""
+		switch agent.Status {
+		case "unreadable":
+			statusTag = " [unreadable]"
+		case "present-only":
+			statusTag = " [present-only]"
+		}
+
+		s += fmt.Sprintf("%s%s%s\n", cursor, agent.Name, statusTag)
+
+		// Detail panel for selected agent
+		if m.selectedAgent == i {
+			if len(agent.MCPServers) > 0 {
+				s += "    MCP Servers:\n"
+				for _, srv := range agent.MCPServers {
+					s += fmt.Sprintf("      - %s (%s)\n", srv.Name, srv.Transport)
+				}
+			}
+			if len(agent.Plugins) > 0 {
+				s += "    Plugins:\n"
+				for _, p := range agent.Plugins {
+					enabled := ""
+					if p.Enabled {
+						enabled = " [enabled]"
+					}
+					version := ""
+					if p.Version != "" {
+						version = " v" + p.Version
+					}
+					s += fmt.Sprintf("      - %s%s%s\n", p.Name, version, enabled)
+				}
+			}
+			if len(agent.MCPServers) == 0 && len(agent.Plugins) == 0 {
+				s += "    No MCP servers or plugins configured.\n"
+			}
+		}
+	}
+
 	return s
 }

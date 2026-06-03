@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"skillsync/tui/internal/agentdetect"
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/types"
@@ -35,6 +36,8 @@ const (
 	ScreenStorage
 	ScreenProjects
 	ScreenDeleteConfirm
+	ScreenLicenseDisclosure
+	ScreenAgentEcosystem
 )
 
 type Model struct {
@@ -70,6 +73,11 @@ type Model struct {
 
 	// Service Layer
 	backend AppService
+
+	// Agent Ecosystem State
+	agentEcosystem       []agentdetect.AgentInfo
+	selectedAgent        int
+	agentEcosystemScroll int
 }
 
 type item struct {
@@ -202,6 +210,12 @@ func (m Model) GetKeyBindings() []KeyBinding {
 		return []KeyBinding{
 			{Key: "y", Help: "confirm delete"},
 			{Key: "n/esc", Help: "cancel"},
+		}
+	case ScreenAgentEcosystem:
+		return []KeyBinding{
+			{Key: "esc/q", Help: "back"},
+			{Key: "up/down", Help: "select agent"},
+			{Key: "j/k", Help: "scroll"},
 		}
 	default:
 		return []KeyBinding{

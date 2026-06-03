@@ -5,21 +5,36 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"skillsync/tui/internal/runner"
-	"skillsync/tui/internal/storage"
-	"skillsync/tui/internal/syncengine"
-	"skillsync/tui/internal/types"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"skillsync/tui/internal/agentdetect"
+	"skillsync/tui/internal/runner"
+	"skillsync/tui/internal/storage"
+	"skillsync/tui/internal/syncengine"
+	"skillsync/tui/internal/types"
 )
 
 type skillsLoadedMsg []types.Skill
 type errorMsg error
+
+// agentEcosystemLoadedMsg is dispatched when DetectAgentEcosystem completes.
+type agentEcosystemLoadedMsg struct {
+	list []agentdetect.AgentInfo
+	err  error
+}
+
+// loadAgentEcosystemCmd dispatches DetectAgentEcosystem asynchronously.
+func (m Model) loadAgentEcosystemCmd() tea.Cmd {
+	return func() tea.Msg {
+		list, err := m.backend.DetectAgentEcosystem()
+		return agentEcosystemLoadedMsg{list: list, err: err}
+	}
+}
 
 type installerProgressMsg struct {
 	percent float64
@@ -80,6 +95,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.StatusMsg = "Ecosistema instanciado"
 		}
 		return m, nil
+	case agentEcosystemLoadedMsg:
+		if msg.err != nil {
+			m.StatusMsg = fmt.Sprintf("Error detectando agentes: %v", msg.err)
+			return m, nil
+		}
+		m.agentEcosystem = msg.list
+		m.selectedAgent = 0
+		m.agentEcosystemScroll = 0
+		return m, nil
+
 	case skillsLoadedMsg:
 		newModel, cmd := m.List.Update(msg)
 		m.List = newModel.(ListModel)
@@ -252,6 +277,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleProjectsKeys(msg)
 	case ScreenDeleteConfirm:
 		return m.handleDeleteConfirmKeys(msg)
+	case ScreenAgentEcosystem:
+		return m.handleAgentEcosystemKeys(msg)
 	}
 
 	return m, nil
@@ -264,7 +291,7 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.HomeCursor--
 		}
 	case "down", "j":
-		if m.HomeCursor < 4 {
+		if m.HomeCursor < 5 {
 			m.HomeCursor++
 		}
 	case "enter", " ":
@@ -286,6 +313,11 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.HomeCursor == 4 {
 			m.Screen = ScreenProjects
 			return m, m.loadProjectsCmd()
+		} else if m.HomeCursor == 5 {
+			m.Screen = ScreenAgentEcosystem
+			m.selectedAgent = 0
+			m.agentEcosystemScroll = 0
+			return m, m.loadAgentEcosystemCmd()
 		}
 	case "1":
 		m.HomeCursor = 0
@@ -310,6 +342,12 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.HomeCursor = 4
 		m.Screen = ScreenProjects
 		return m, m.loadProjectsCmd()
+	case "6":
+		m.HomeCursor = 5
+		m.Screen = ScreenAgentEcosystem
+		m.selectedAgent = 0
+		m.agentEcosystemScroll = 0
+		return m, m.loadAgentEcosystemCmd()
 	case "esc", "q":
 		return m, tea.Quit
 	}
@@ -330,6 +368,10 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Coordination logic
 	if m.List.selected != nil {
 		m.selected = m.List.selected
+	}
+
+	if m.List.searchFocused {
+		return m, cmd
 	}
 
 	switch msg.String() {
@@ -600,7 +642,7 @@ func (m Model) startSync() tea.Cmd {
 	return func() tea.Msg {
 		// Ensure core shared library and AGENTS.md exist before syncing
 		_ = m.backend.InstallCoreSkill("skill-sync")
-		_ = m.backend.EnsureAgentsMD()
+		_ = m.backend.EnsureAgentsMD(m.rootPath)
 
 		opts := syncengine.SyncOptions{
 			DryRun: false,
@@ -719,6 +761,26 @@ func (m Model) handleDeleteConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, cmd
+}
+
+// handleAgentEcosystemKeys handles keyboard input on ScreenAgentEcosystem.
+// up/k: move selection up; down/j: move selection down; esc/q: return to home.
+func (m Model) handleAgentEcosystemKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.Screen = ScreenHome
+		m.HomeCursor = 5
+		return m, nil
+	case "up", "k":
+		if m.selectedAgent > 0 {
+			m.selectedAgent--
+		}
+	case "down", "j":
+		if m.selectedAgent < len(m.agentEcosystem)-1 {
+			m.selectedAgent++
+		}
+	}
+	return m, nil
 }
 
 func (m Model) installFromStorageAndSyncCmd(stored storage.StoredSkill) tea.Cmd {

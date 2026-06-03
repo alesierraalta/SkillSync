@@ -1,36 +1,40 @@
 package ui
 
 import (
+	"strings"
+	"testing"
+
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"skillsync/tui/internal/agentdetect"
 	"skillsync/tui/internal/remove"
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/syncengine"
 	"skillsync/tui/internal/types"
-	"strings"
-	"testing"
 )
 
 // MockAppService implements AppService for testing.
 type MockAppService struct {
-	DiscoverSkillsFunc         func(rootPath string) ([]string, error)
-	ScanProjectsFunc           func(roots []string, depth int) ([]string, error)
-	ParseSkillFunc             func(path string) (*types.Skill, error)
-	ParseSkillContentFunc      func(content string) (*types.Skill, error)
-	SaveSkillFunc              func(path string, skill *types.Skill) error
-	SyncFunc                   func(root string, opts syncengine.SyncOptions) (*runner.SyncReport, error)
-	RegisterProjectFunc        func(path string) error
-	RegisterProjectInitialFunc func(path string) error
-	ListStoredSkillsFunc       func() ([]storage.StoredSkill, error)
-	GetProjectsFunc            func() ([]storage.ProjectInfo, error)
-	SaveToStorageFunc          func(skill *types.Skill, metadata storage.StoredMetadata) error
-	LoadFromStorageFunc        func(id string) (string, error)
-	InstallCoreSkillFunc       func(name string) error
-	RegisterOpenCodeToolsFunc  func() error
+	DiscoverSkillsFunc            func(rootPath string) ([]string, error)
+	ScanProjectsFunc              func(roots []string, depth int) ([]string, error)
+	ParseSkillFunc                func(path string) (*types.Skill, error)
+	ParseSkillContentFunc         func(content string) (*types.Skill, error)
+	SaveSkillFunc                 func(path string, skill *types.Skill) error
+	SyncFunc                      func(root string, opts syncengine.SyncOptions) (*runner.SyncReport, error)
+	RegisterProjectFunc           func(path string) error
+	RegisterProjectInitialFunc    func(path string) error
+	ListStoredSkillsFunc          func() ([]storage.StoredSkill, error)
+	GetProjectsFunc               func() ([]storage.ProjectInfo, error)
+	SaveToStorageFunc             func(skill *types.Skill, metadata storage.StoredMetadata) error
+	LoadFromStorageFunc           func(id string) (string, error)
+	InstallCoreSkillFunc          func(name string) error
+	RegisterOpenCodeToolsFunc     func() error
 	RegisterSkillManagerAgentFunc func() error
-	EnsureAgentsMDFunc        func() error
-	RemoveSkillFunc           func(name string, opts remove.Options) error
+	EnsureAgentsMDFunc            func(root string) error
+	RemoveSkillFunc               func(name string, opts remove.Options) error
+	DetectAgentEcosystemFunc      func() ([]agentdetect.AgentInfo, error)
 }
 
 func (m *MockAppService) DiscoverSkills(rootPath string) ([]string, error) {
@@ -102,9 +106,9 @@ func (m *MockAppService) RegisterSkillManagerAgent() error {
 	return nil
 }
 
-func (m *MockAppService) EnsureAgentsMD() error {
+func (m *MockAppService) EnsureAgentsMD(root string) error {
 	if m.EnsureAgentsMDFunc != nil {
-		return m.EnsureAgentsMDFunc()
+		return m.EnsureAgentsMDFunc(root)
 	}
 	return nil
 }
@@ -114,6 +118,13 @@ func (m *MockAppService) RemoveSkill(name string, opts remove.Options) error {
 		return m.RemoveSkillFunc(name, opts)
 	}
 	return nil
+}
+
+func (m *MockAppService) DetectAgentEcosystem() ([]agentdetect.AgentInfo, error) {
+	if m.DetectAgentEcosystemFunc != nil {
+		return m.DetectAgentEcosystemFunc()
+	}
+	return nil, nil
 }
 
 func TestMockAppService_InterfaceCompliance(t *testing.T) {
