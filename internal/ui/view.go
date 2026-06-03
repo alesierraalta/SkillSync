@@ -67,26 +67,30 @@ func (m Model) View() string {
 	return content + "\n" + m.renderFooter()
 }
 
-func (m Model) renderFooter() string {
+// renderBinding renders a single key binding with a bold Primary-colored key
+// and a Muted-colored description.
+func renderBinding(b KeyBinding) string {
+	return footerKeyStyle.Render(b.Key) + footerStyle.Render(": "+b.Help)
+}
 
+func (m Model) renderFooter() string {
 	bindings := m.GetKeyBindings()
 
-	footer := ""
-
-	for i, b := range bindings {
-
-		footer += fmt.Sprintf("%s: %s", b.Key, b.Help)
-
-		if i < len(bindings)-1 {
-
-			footer += " | "
-
-		}
-
+	var parts []string
+	for _, b := range bindings {
+		parts = append(parts, renderBinding(b))
 	}
 
-	return footerStyle.Render(footer)
+	separator := footerStyle.Render(" | ")
+	footer := ""
+	for i, part := range parts {
+		footer += part
+		if i < len(parts)-1 {
+			footer += separator
+		}
+	}
 
+	return footer
 }
 
 func (m Model) homeView() string {
@@ -105,17 +109,13 @@ func (m Model) homeView() string {
 	var body string
 
 	for i, opt := range opts {
-
-		cursor := "  "
-
+		var line string
 		if m.HomeCursor == i {
-
-			cursor = "> "
-
+			line = selectedItemStyle.Render("> " + opt)
+		} else {
+			line = "  " + opt
 		}
-
-		body += fmt.Sprintf("%s%s\n", cursor, opt)
-
+		body += line + "\n"
 	}
 
 	if m.StatusMsg != "" {
@@ -275,7 +275,11 @@ func (m Model) agentEcosystemView() string {
 			statusTag = " [present-only]"
 		}
 
-		s += fmt.Sprintf("%s%s%s\n", cursor, agent.Name, statusTag)
+		row := fmt.Sprintf("%s%s%s", cursor, agent.Name, statusTag)
+		if m.selectedAgent == i {
+			row = selectedItemStyle.Render(row)
+		}
+		s += row + "\n"
 
 		// Detail panel for selected agent
 		if m.selectedAgent == i {

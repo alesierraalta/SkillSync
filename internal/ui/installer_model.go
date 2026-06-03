@@ -2,8 +2,10 @@ package ui
 
 import (
 	"fmt"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
 	"skillsync/tui/internal/storage"
 )
 

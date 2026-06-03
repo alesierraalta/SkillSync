@@ -3,4 +3,4 @@
                                                         
   Error deleting skill 'test-skill': permission denied  
                                                         
-  y: confirm delete | n/esc: cancel  
+y  : confirm delete     |   n/esc  : cancel  
