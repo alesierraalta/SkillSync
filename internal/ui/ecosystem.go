@@ -1,9 +1,13 @@
 package ui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"time"
+
+	"skillsync/tui/internal/install"
+	"skillsync/tui/internal/syncengine"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -23,6 +27,11 @@ type ecosystemMsg struct {
 
 func runInstallerCmd(m Model) tea.Cmd {
 	return func() tea.Msg {
+		if m.Installer.Autoskills {
+			if err := install.AutoskillsPreflight(); err != nil {
+				return installerFinishedMsg{err: err}
+			}
+		}
 		// Start with 10%
 		return installerProgressMsg{percent: 0.1, task: "Creando directorios de proveedores..."}
 	}
@@ -89,39 +98,58 @@ func nextInstallerStep(m Model, currentPercent float64) tea.Cmd {
 					}
 				}
 			}
-			return installerProgressMsg{percent: 0.6, task: "Sincronizando configuraciones..."}
+			return installerProgressMsg{percent: 0.6, task: "Ejecutando Smart Scan (autoskills)..."}
 
 		case 0.6:
-			// 3. Sync Configs
-			agentsFile := "AGENTS.md"
-			content, _ := os.ReadFile(agentsFile)
-			if len(content) == 0 {
-				content = []byte("# Agent Skills\n")
-				_ = os.WriteFile(agentsFile, content, 0644)
+			// 3. Autoskills
+			if m.Installer.Autoskills {
+				res := install.AutoskillsInstall(context.Background())
+				if !res.Success {
+					return installerFinishedMsg{err: res.Error}
+				}
+			}
+			return installerProgressMsg{percent: 0.8, task: "Sincronizando configuraciones..."}
+
+		case 0.8:
+			// 4. Sync Configs
+			if err := m.backend.EnsureAgentsMD(m.rootPath); err != nil {
+				return installerFinishedMsg{err: err}
 			}
 
+			// Discover and update AGENTS.md with the newly installed skills
+			realRoot := m.rootPath
+			if realRoot == "" {
+				realRoot = "."
+			}
+			if skills, err := syncengine.DiscoverSkills(realRoot); err == nil {
+				_ = syncengine.UpdateAgentsMarkdown(realRoot, skills, "", false)
+			}
+
+			agentsFile := filepath.Join(realRoot, "AGENTS.md")
+			content, _ := os.ReadFile(agentsFile)
+
 			if m.Installer.Providers[0] {
-				_ = os.WriteFile("CLAUDE.md", content, 0644)
+				_ = os.WriteFile(filepath.Join(m.rootPath, "CLAUDE.md"), content, 0644)
 			}
 			if m.Installer.Providers[1] {
-				_ = os.WriteFile("GEMINI.md", content, 0644)
+				_ = os.WriteFile(filepath.Join(m.rootPath, "GEMINI.md"), content, 0644)
 			}
 			if m.Installer.Providers[2] {
-				_ = os.WriteFile("codex.md", content, 0644)
+				_ = os.WriteFile(filepath.Join(m.rootPath, "codex.md"), content, 0644)
 			}
 			if m.Installer.Providers[3] {
-				_ = os.MkdirAll(".github", 0755)
-				_ = os.WriteFile(".github/copilot-instructions.md", content, 0644)
+				_ = os.MkdirAll(filepath.Join(m.rootPath, ".github"), 0755)
+				_ = os.WriteFile(filepath.Join(m.rootPath, ".github/copilot-instructions.md"), content, 0644)
 			}
 			if m.Installer.Providers[4] {
-				_ = os.WriteFile("OPENCODE.md", content, 0644)
+				_ = os.WriteFile(filepath.Join(m.rootPath, "OPENCODE.md"), content, 0644)
 				_ = m.backend.RegisterOpenCodeTools()
 				_ = m.backend.RegisterSkillManagerAgent()
 			}
 
 			if m.Installer.Global {
 				// Simular global aliases
-				_ = os.WriteFile("GLOBAL_ALIASES.txt", []byte("alias k='skillsync'\nalias ks='skillsync sync'"), 0644)
+				_ = os.WriteFile(filepath.Join(m.rootPath, "GLOBAL_ALIASES.txt"), []byte("alias k='skillsync'\nalias ks='skillsync sync'"), 0644)
 			}
 
 			if m.backend != nil {
@@ -149,12 +177,21 @@ func instantiateEcosystemCmd(backend AppService, rootPath string) tea.Cmd {
 			}
 		}
 
-		if err := backend.EnsureAgentsMD(); err != nil {
+		if err := backend.EnsureAgentsMD(rootPath); err != nil {
 			return ecosystemMsg{err: err}
 		}
 
+		realRoot := rootPath
+		if realRoot == "" {
+			realRoot = "."
+		}
+		if skills, err := syncengine.DiscoverSkills(realRoot); err == nil {
+			_ = syncengine.UpdateAgentsMarkdown(realRoot, skills, "", false)
+		}
+
 		// Register OpenCode tools and agents when .opencode/ directory exists
-		if _, err := os.Stat(".opencode"); err == nil {
+		opencodeDir := filepath.Join(rootPath, ".opencode")
+		if _, err := os.Stat(opencodeDir); err == nil {
 			if err := backend.RegisterOpenCodeTools(); err != nil {
 				return ecosystemMsg{err: err}
 			}

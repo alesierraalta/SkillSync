@@ -38,13 +38,7 @@ func TestCoreSkillInstallAndParse(t *testing.T) {
 				t.Errorf("SKILL.md for %s appears to be a stub (missing description)", sk)
 			}
 
-			// 2. Assert assets for skill-sync
-			if sk == "skill-sync" {
-				assetPath := filepath.Join(".agents", "skills", sk, "assets", "sync.sh")
-				if _, err := os.Stat(assetPath); os.IsNotExist(err) {
-					t.Errorf("missing asset: %s", assetPath)
-				}
-			}
+
 
 			// 3. Parse and assert metadata
 			parsed, err := parser.Parse(skillFile)

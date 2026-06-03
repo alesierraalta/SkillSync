@@ -137,7 +137,7 @@ func TestUpdateAgentsMarkdown_FailsWhenRequiredHeadersMissing(t *testing.T) {
 `
 	os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644)
 
-	err := UpdateAgentsMarkdown(tmpDir, nil, false)
+	err := UpdateAgentsMarkdown(tmpDir, nil, "", false)
 	if err == nil {
 		t.Fatal("expected error when required headers are missing")
 	}
@@ -157,7 +157,7 @@ func TestUpdateAgentsMarkdown_FailsWhenOnlyOneRequiredHeaderExists(t *testing.T)
 `
 	os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644)
 
-	err := UpdateAgentsMarkdown(tmpDir, nil, false)
+	err := UpdateAgentsMarkdown(tmpDir, nil, "", false)
 	if err == nil {
 		t.Fatal("expected error when one required header is missing")
 	}
@@ -188,12 +188,12 @@ Some other text
 			Name: "new-skill",
 			Metadata: types.Metadata{
 				Scope: "root",
-				AutoInvoke: true,
+				AutoInvoke: []string{"new-skill"},
 			},
 		},
 	}
 	
-	err := UpdateAgentsMarkdown(tmpDir, skills, false)
+	err := UpdateAgentsMarkdown(tmpDir, skills, "", false)
 	if err != nil {
 		t.Fatalf("UpdateAgentsMarkdown failed: %v", err)
 	}
@@ -216,3 +216,232 @@ Some other text
 		t.Errorf("OPENCODE.md still contained old-skill after copy")
 	}
 }
+
+func TestUpdateAgentsMarkdown_FiltersByScope(t *testing.T) {
+	tmpDir := t.TempDir()
+	
+	agentsContent := `# Root Agents
+## Available Skills
+
+| Skill | Description | Location |
+| --- | --- | --- |
+
+### Auto-invoke Skills
+
+| Action | Skill |
+| --- | --- |
+`
+	os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644)
+	
+	skills := []types.Skill{
+		{
+			Name: "root-skill",
+			Metadata: types.Metadata{
+				Scope: "root",
+				AutoInvoke: []string{"root-skill"},
+			},
+		},
+		{
+			Name: "ui-skill",
+			Metadata: types.Metadata{
+				Scope: "ui",
+				AutoInvoke: []string{"ui-skill"},
+			},
+		},
+	}
+	
+	// Test with scope "ui"
+	err := UpdateAgentsMarkdown(tmpDir, skills, "ui", false)
+	if err != nil {
+		t.Fatalf("UpdateAgentsMarkdown failed: %v", err)
+	}
+	
+	newAgentsContent, _ := os.ReadFile(filepath.Join(tmpDir, "AGENTS.md"))
+	parts := strings.Split(string(newAgentsContent), "### Auto-invoke Skills")
+	if len(parts) < 2 {
+		t.Fatalf("could not find Auto-invoke Skills section in AGENTS.md")
+	}
+	autoInvokeSection := parts[1]
+	
+	if !strings.Contains(autoInvokeSection, "ui-skill") {
+		t.Errorf("Auto-invoke section did not contain ui-skill")
+	}
+	if strings.Contains(autoInvokeSection, "root-skill") {
+		t.Errorf("Auto-invoke section contained root-skill but expected only ui-skill")
+	}
+}
+
+func TestUpdateAgentsMarkdown_MultiActionAndSorting(t *testing.T) {
+	tmpDir := t.TempDir()
+	
+	agentsContent := `# Root Agents
+## Available Skills
+
+| Skill | Description | Location |
+| --- | --- | --- |
+
+### Auto-invoke Skills
+
+| Action | Skill |
+| --- | --- |
+`
+	os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644)
+	
+	skills := []types.Skill{
+		{
+			Name: "B-skill",
+			Metadata: types.Metadata{
+				Scope: "root",
+				AutoInvoke: []string{"zeta"},
+			},
+		},
+		{
+			Name: "A-skill",
+			Metadata: types.Metadata{
+				Scope: "root",
+				AutoInvoke: []string{"zeta", "Beta", "alpha"},
+			},
+		},
+	}
+	
+	err := UpdateAgentsMarkdown(tmpDir, skills, "", false)
+	if err != nil {
+		t.Fatalf("UpdateAgentsMarkdown failed: %v", err)
+	}
+	
+	newAgentsContent, _ := os.ReadFile(filepath.Join(tmpDir, "AGENTS.md"))
+	lines := strings.Split(string(newAgentsContent), "\n")
+	
+	var tableRows []string
+	inTable := false
+	for _, line := range lines {
+		if strings.Contains(line, "| ----------------------------------- | ---------- |") {
+			inTable = true
+			continue
+		}
+		if inTable {
+			if strings.HasPrefix(line, "|") {
+				tableRows = append(tableRows, strings.TrimSpace(line))
+			} else if line != "" {
+				inTable = false
+			}
+		}
+	}
+	
+	expectedRows := []string{
+		"| alpha                               | `A-skill` |",
+		"| Beta                                | `A-skill` |",
+		"| zeta                                | `A-skill` |",
+		"| zeta                                | `B-skill` |",
+	}
+	
+	if len(tableRows) != len(expectedRows) {
+		t.Fatalf("Expected %d rows, got %d. Table lines:\n%s", len(expectedRows), len(tableRows), strings.Join(tableRows, "\n"))
+	}
+	
+	for i, exp := range expectedRows {
+		if tableRows[i] != exp {
+			t.Errorf("At row %d: expected %q, got %q", i, exp, tableRows[i])
+		}
+	}
+}
+
+func TestSync_CleanupLegacyScripts(t *testing.T) {
+	tmpDir := t.TempDir()
+	
+	// Create mock skills directories with assets
+	assetsDir1 := filepath.Join(tmpDir, ".agents", "skills", "skill-a", "assets")
+	assetsDir2 := filepath.Join(tmpDir, ".agents", "skills", "skill-b", "assets")
+	err := os.MkdirAll(assetsDir1, 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = os.MkdirAll(assetsDir2, 0755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Write legacy files
+	sh1 := filepath.Join(assetsDir1, "sync.sh")
+	sh2 := filepath.Join(assetsDir1, "sync_test.sh")
+	ps1 := filepath.Join(assetsDir2, "sync_test.ps1")
+	otherFile := filepath.Join(assetsDir2, "keep_me.txt")
+
+	os.WriteFile(sh1, []byte("echo sh1"), 0644)
+	os.WriteFile(sh2, []byte("echo sh2"), 0644)
+	os.WriteFile(ps1, []byte("echo ps1"), 0644)
+	os.WriteFile(otherFile, []byte("keep"), 0644)
+
+	// Pre-create AGENTS.md so Sync doesn't error
+	agentsContent := "# Root Agents\n## Available Skills\n\n| Skill | Description | Location |\n| --- | --- | --- |\n\n### Auto-invoke Skills\n\n| Action | Skill |\n| --- | --- |\n"
+	os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644)
+
+	// First, test with DryRun = true
+	report, err := Sync(tmpDir, SyncOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("Sync failed: %v", err)
+	}
+
+	// Verify files not deleted in dry run
+	for _, path := range []string{sh1, sh2, ps1, otherFile} {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			t.Errorf("file should not be deleted in dry run: %s", path)
+		}
+	}
+
+	// Verify report has changes in dry run
+	var foundSh1, foundSh2, foundPs1 bool
+	for _, change := range report.Changes {
+		if strings.Contains(change.Path, "sync.sh") {
+			foundSh1 = true
+			if change.Status != "deleted" {
+				t.Errorf("expected status deleted, got %q", change.Status)
+			}
+		}
+		if strings.Contains(change.Path, "sync_test.sh") {
+			foundSh2 = true
+		}
+		if strings.Contains(change.Path, "sync_test.ps1") {
+			foundPs1 = true
+		}
+	}
+	if !foundSh1 || !foundSh2 || !foundPs1 {
+		t.Errorf("dry run report did not list all legacy scripts: sh1=%v, sh2=%v, ps1=%v", foundSh1, foundSh2, foundPs1)
+	}
+
+	// Now run without DryRun (actual delete)
+	report2, err := Sync(tmpDir, SyncOptions{DryRun: false})
+	if err != nil {
+		t.Fatalf("Sync failed: %v", err)
+	}
+
+	// Verify legacy files deleted
+	for _, path := range []string{sh1, sh2, ps1} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("file should have been deleted: %s", path)
+		}
+	}
+	// Verify otherFile still exists
+	if _, err := os.Stat(otherFile); os.IsNotExist(err) {
+		t.Errorf("non-legacy file should not be deleted: %s", otherFile)
+	}
+
+	// Verify report contains the deletions
+	foundSh1, foundSh2, foundPs1 = false, false, false
+	for _, change := range report2.Changes {
+		if strings.Contains(change.Path, "sync.sh") {
+			foundSh1 = true
+		}
+		if strings.Contains(change.Path, "sync_test.sh") {
+			foundSh2 = true
+		}
+		if strings.Contains(change.Path, "sync_test.ps1") {
+			foundPs1 = true
+		}
+	}
+	if !foundSh1 || !foundSh2 || !foundPs1 {
+		t.Errorf("run report did not list all legacy scripts: sh1=%v, sh2=%v, ps1=%v", foundSh1, foundSh2, foundPs1)
+	}
+}
+
+

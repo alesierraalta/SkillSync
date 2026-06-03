@@ -12,24 +12,26 @@ type InstallerModel struct {
 	Mode         bool // false = Recommended, true = Advanced
 	Providers    []bool
 	Skills       []bool
+	Autoskills   bool
 	Global       bool
 	StoredSkills []bool
-	
+	Screen       Screen
+
 	// External state needed for rendering/logic
-	Width        int
-	Height       int
-	RootPath     string
-	AllStored    []storage.StoredSkill
-	Backend      AppService
+	Width     int
+	Height    int
+	RootPath  string
+	AllStored []storage.StoredSkill
+	Backend   AppService
 }
 
 func NewInstallerModel(backend AppService, rootPath string) InstallerModel {
 	return InstallerModel{
-		Providers:    []bool{true, false, true, false, true},
-		Skills:       []bool{true, true, true},
-		Global:       true,
-		RootPath:     rootPath,
-		Backend:      backend,
+		Providers: []bool{true, false, true, false, true},
+		Skills:    []bool{true, true, true},
+		Global:    true,
+		RootPath:  rootPath,
+		Backend:   backend,
 	}
 }
 
@@ -46,30 +48,62 @@ func (m InstallerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.Cursor--
 			}
 		case "down", "j":
-			if m.Cursor < 9+len(m.AllStored) {
+			if m.Cursor < 10+len(m.AllStored) {
 				m.Cursor++
 			}
 		case "m", "M":
 			m.Mode = !m.Mode
 		case " ", "space", "enter":
+			if m.Screen == ScreenLicenseDisclosure {
+				if msg.String() == "y" || msg.String() == "Y" {
+					return m, func() tea.Msg {
+						return syncRequestMsg{
+							Installer: m,
+						}
+					}
+				} else if msg.String() == "n" || msg.String() == "N" || msg.String() == "esc" {
+					m.Screen = ScreenInstaller
+					return m, nil
+				}
+				return m, nil
+			}
+
 			storageOffset := len(m.AllStored)
 			if m.Cursor >= 0 && m.Cursor < 5 {
 				m.Providers[m.Cursor] = !m.Providers[m.Cursor]
 			} else if m.Cursor >= 5 && m.Cursor < 8 {
 				m.Skills[m.Cursor-5] = !m.Skills[m.Cursor-5]
-			} else if m.Cursor >= 8 && m.Cursor < 8+storageOffset {
-				idx := m.Cursor - 8
+			} else if m.Cursor == 8 {
+				m.Autoskills = !m.Autoskills
+			} else if m.Cursor >= 9 && m.Cursor < 9+storageOffset {
+				idx := m.Cursor - 9
 				if idx < len(m.StoredSkills) {
 					m.StoredSkills[idx] = !m.StoredSkills[idx]
 				}
-			} else if m.Cursor == 8+storageOffset {
+			} else if m.Cursor == 9+storageOffset {
 				m.Global = !m.Global
-			} else if m.Cursor == 9+storageOffset && msg.String() == "enter" {
+			} else if m.Cursor == 10+storageOffset && msg.String() == "enter" {
+				if m.Autoskills {
+					m.Screen = ScreenLicenseDisclosure
+					return m, nil
+				}
 				return m, func() tea.Msg {
 					return syncRequestMsg{
 						Installer: m,
 					}
 				}
+			}
+		case "y", "Y", "n", "N", "esc":
+			if m.Screen == ScreenLicenseDisclosure {
+				if msg.String() == "y" || msg.String() == "Y" {
+					return m, func() tea.Msg {
+						return syncRequestMsg{
+							Installer: m,
+						}
+					}
+				}
+				m.Screen = ScreenInstaller
+				return m, nil
 			}
 		}
 	}
@@ -81,6 +115,10 @@ type syncRequestMsg struct {
 }
 
 func (m InstallerModel) View() string {
+	if m.Screen == ScreenLicenseDisclosure {
+		return m.LicenseDisclosureView()
+	}
+
 	listWidth := int(float64(m.Width) * 0.5)
 	previewWidth := m.Width - listWidth
 
@@ -96,6 +134,23 @@ func (m InstallerModel) View() string {
 	right := viewportStyle.Width(previewWidth).PaddingLeft(2).Render(m.PreviewView())
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, right)
+}
+
+func (m InstallerModel) LicenseDisclosureView() string {
+	width := m.Width - 8
+	title := titleStyle.Render("AUTOSKILLS LICENSE DISCLOSURE")
+
+	content := "\nThis action will execute 'midudev/autoskills' via npx.\n\n" +
+		lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("208")).Render("LICENSE: Creative Commons Attribution-NonCommercial 4.0 International (CC-BY-NC-4.0)") + "\n\n" +
+		"By proceeding, you acknowledge that this tool is for NON-COMMERCIAL use only.\n" +
+		"The discovery process will analyze your project structure to suggest relevant skills.\n\n" +
+		"Do you accept and want to proceed? (y/n)"
+
+	return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center,
+		cardStyle.Width(width).Render(
+			lipgloss.JoinVertical(lipgloss.Center, title, content),
+		),
+	)
 }
 
 func (m InstallerModel) renderCard(title, content string, width int) string {
@@ -161,11 +216,26 @@ func (m InstallerModel) OptionsView() string {
 	}
 	skillsCard := m.renderCard("[2] INSTALL CORE SKILLS", skillsView, width)
 
+	// Smart Scan
+	cursorAuto := "  "
+	if m.Cursor == 8 {
+		cursorAuto = "> "
+	}
+	checkAuto := "[ ]"
+	if m.Autoskills {
+		checkAuto = checkmarkStyle.Render("[x]")
+	}
+	autoView := fmt.Sprintf("%s%s Smart Scan (autoskills)\n", cursorAuto, checkAuto)
+	if m.Cursor == 8 {
+		autoView += hintStyle.Render("    Detect technologies & suggest skills") + "\n"
+	}
+	autoCard := m.renderCard("[3] DISCOVERY", autoView, width)
+
 	// Storage
 	var storageView string
 	for i, sk := range m.AllStored {
 		cursor := "  "
-		if m.Cursor == i+8 {
+		if m.Cursor == i+9 {
 			cursor = "> "
 		}
 		check := "[ ]"
@@ -174,14 +244,14 @@ func (m InstallerModel) OptionsView() string {
 		}
 		storageView += fmt.Sprintf("%s%s %s\n", cursor, check, sk.Metadata.SkillName)
 	}
-	storageCard := m.renderCard("[3] INSTALL FROM STORAGE", storageView, width)
+	storageCard := m.renderCard("[4] INSTALL FROM STORAGE", storageView, width)
 
 	// Global & Action
 	var footer string
 	storageOffset := len(m.AllStored)
 
 	cursorGlobal := "  "
-	if m.Cursor == 8+storageOffset {
+	if m.Cursor == 9+storageOffset {
 		cursorGlobal = "> "
 	}
 	checkGlobal := "[ ]"
@@ -200,6 +270,7 @@ func (m InstallerModel) OptionsView() string {
 		header,
 		providersCard,
 		skillsCard,
+		autoCard,
 		storageCard,
 		footer,
 	)
@@ -261,6 +332,11 @@ func (m InstallerModel) PreviewView() string {
 	if m.Global {
 		content += lipgloss.NewStyle().Bold(true).Render("GLOBAL ALIASES:") + "\n"
 		content += "  + Injecting 4 aliases into shell profile\n"
+	}
+
+	if m.Autoskills {
+		content += "\n" + lipgloss.NewStyle().Bold(true).Render("SMART SCAN:") + "\n"
+		content += "  + Executing autoskills discovery\n"
 	}
 
 	return m.renderCard("📋 INSTALLATION PREVIEW", content, width)

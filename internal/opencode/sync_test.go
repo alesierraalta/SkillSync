@@ -327,9 +327,9 @@ func TestRegenerateTools_GeneratesTools(t *testing.T) {
 	initPackageJSON(t, tmp)
 
 	skills := []types.Skill{
-		{Name: "foo", Metadata: types.Metadata{AutoInvoke: true, Description: "Foo skill"}},
-		{Name: "bar", Metadata: types.Metadata{AutoInvoke: true, Description: "Bar skill"}},
-		{Name: "baz", Metadata: types.Metadata{AutoInvoke: false, Description: "Baz skill"}},
+		{Name: "foo", Metadata: types.Metadata{AutoInvoke: []string{"foo"}, Description: "Foo skill"}},
+		{Name: "bar", Metadata: types.Metadata{AutoInvoke: []string{"bar"}, Description: "Bar skill"}},
+		{Name: "baz", Metadata: types.Metadata{AutoInvoke: []string{}, Description: "Baz skill"}},
 	}
 
 	_, err := RegenerateTools(tmp, skills, false)
@@ -375,7 +375,7 @@ func TestRegenerateTools_PreservesConfig(t *testing.T) {
 	}
 
 	skills := []types.Skill{
-		{Name: "foo", Metadata: types.Metadata{AutoInvoke: true}},
+		{Name: "foo", Metadata: types.Metadata{AutoInvoke: []string{"foo"}}},
 	}
 
 	_, err := RegenerateTools(tmp, skills, false)
@@ -408,7 +408,7 @@ func TestRegenerateTools_DryRun(t *testing.T) {
 	originalContent, _ := os.ReadFile(pkgPath)
 
 	skills := []types.Skill{
-		{Name: "foo", Metadata: types.Metadata{AutoInvoke: true}},
+		{Name: "foo", Metadata: types.Metadata{AutoInvoke: []string{"foo"}}},
 	}
 
 	_, err := RegenerateTools(tmp, skills, true)
@@ -531,7 +531,7 @@ func TestSyncOpencode_FullSync(t *testing.T) {
 	}
 
 	skills := []types.Skill{
-		{Name: "foo", Metadata: types.Metadata{AutoInvoke: true, Description: "Foo skill"}},
+		{Name: "foo", Metadata: types.Metadata{AutoInvoke: []string{"foo"}, Description: "Foo skill"}},
 	}
 	_, err = RegenerateTools(tmp, skills, false)
 	if err != nil {
@@ -593,7 +593,7 @@ func TestSyncOpencode_Idempotent(t *testing.T) {
 	fooSrc := filepath.Join(fooDir, "SKILL.md")
 	os.WriteFile(fooSrc, []byte("name: foo\nauto_invoke: true\n"), 0644)
 
-	skills := []types.Skill{{Name: "foo", Metadata: types.Metadata{AutoInvoke: true}}}
+	skills := []types.Skill{{Name: "foo", Metadata: types.Metadata{AutoInvoke: []string{"foo"}}}}
 
 	_, _ = SyncSkills(tmp, Options{})
 	RegenerateTools(tmp, skills, false)
@@ -641,7 +641,7 @@ func TestSyncOpencode_RemovedSkill(t *testing.T) {
 	os.WriteFile(fooSrc, []byte("name: foo\nauto_invoke: true\n"), 0644)
 
 	_, _ = SyncSkills(tmp, Options{})
-	skills := []types.Skill{{Name: "foo", Metadata: types.Metadata{AutoInvoke: true}}}
+	skills := []types.Skill{{Name: "foo", Metadata: types.Metadata{AutoInvoke: []string{"foo"}}}}
 	RegenerateTools(tmp, skills, false)
 
 	os.Remove(fooSrc)

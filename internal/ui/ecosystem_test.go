@@ -53,11 +53,6 @@ func TestInstallCoreSkill(t *testing.T) {
 		}
 
 		if sk == "skill-sync" {
-			assetFile := filepath.Join(".agents", "skills", sk, "assets", "sync.sh")
-			if _, err := os.Stat(assetFile); os.IsNotExist(err) {
-				t.Errorf("expected asset %s to exist", assetFile)
-			}
-
 			sharedLib := filepath.Join(".agents", "skills", "lib", "utils.sh")
 			if _, err := os.Stat(sharedLib); os.IsNotExist(err) {
 				t.Errorf("expected shared lib %s to exist", sharedLib)
@@ -260,11 +255,23 @@ func TestNextInstallerStep_RegistersProject(t *testing.T) {
 	m := NewModel(NewBackend(sService))
 	m.rootPath = tmpDir
 
-	// Run step 0.6
+	// Run step 0.6 -> leads to 0.8
 	cmd := nextInstallerStep(m, 0.6)
 	msg := cmd()
 
 	progress, ok := msg.(installerProgressMsg)
+	if !ok {
+		t.Fatalf("expected installerProgressMsg, got %T", msg)
+	}
+	if progress.percent != 0.8 {
+		t.Errorf("expected progress 0.8, got %f", progress.percent)
+	}
+
+	// Run step 0.8 -> leads to 1.0
+	cmd = nextInstallerStep(m, 0.8)
+	msg = cmd()
+
+	progress, ok = msg.(installerProgressMsg)
 	if !ok {
 		t.Fatalf("expected installerProgressMsg, got %T", msg)
 	}
@@ -569,11 +576,13 @@ auto_invoke: true
 `
 	_ = os.WriteFile(".agents/skills/testskill/SKILL.md", []byte(skillContent), 0644)
 
-	// Create AGENTS.md so findProjectRoot works
-	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n"), 0644)
+	// Create AGENTS.md using the proper backend utility to ensure all headers exist
+	backend := NewBackend(nil)
+	if err := backend.EnsureAgentsMD("."); err != nil {
+		t.Fatalf("EnsureAgentsMD failed: %v", err)
+	}
 
 	// Call RegisterOpenCodeTools which should delegate to opencode.SyncSkills and opencode.RegenerateTools
-	backend := NewBackend(nil)
 	err := backend.RegisterOpenCodeTools()
 	if err != nil {
 		t.Fatalf("RegisterOpenCodeTools failed: %v", err)
@@ -607,22 +616,22 @@ func TestInstallCoreSkill_LFNormalization(t *testing.T) {
 	// Setup: create a provider dir
 	_ = os.MkdirAll(".agents/skills", 0755)
 
-	// Run installation for a skill that has .sh files (skill-sync)
+	// Run installation for a skill (skill-sync)
 	backend := NewBackend(nil)
 	err := backend.InstallCoreSkill("skill-sync")
 	if err != nil {
 		t.Fatalf("InstallCoreSkill failed: %v", err)
 	}
 
-	// Verify sync.sh has LF line endings
-	syncSh := filepath.Join(".agents", "skills", "skill-sync", "assets", "sync.sh")
-	content, err := os.ReadFile(syncSh)
+	// Verify SKILL.md has LF line endings
+	skillMd := filepath.Join(".agents", "skills", "skill-sync", "SKILL.md")
+	content, err := os.ReadFile(skillMd)
 	if err != nil {
-		t.Fatalf("failed to read sync.sh: %v", err)
+		t.Fatalf("failed to read SKILL.md: %v", err)
 	}
 
 	if bytes.Contains(content, []byte("\r\n")) {
-		t.Errorf("sync.sh contains CRLF, expected only LF")
+		t.Errorf("SKILL.md contains CRLF, expected only LF")
 	}
 }
 
@@ -663,5 +672,42 @@ func TestInstallCoreSharedLib_RepairCRLF(t *testing.T) {
 	expected := "# User edit\necho 'hello'\n"
 	if string(content) != expected {
 		t.Errorf("expected content %q, got %q", expected, string(content))
+	}
+}
+
+func TestEcosystemInstantiation_PopulatesAgentsMD(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	defer os.Chdir(origDir)
+	_ = os.Chdir(tmpDir)
+
+	storageRoot := filepath.Join(tmpDir, "storage")
+	sService := storage.NewService(storageRoot)
+	backend := NewBackend(sService)
+
+	// Run instantiateEcosystemCmd
+	cmd := instantiateEcosystemCmd(backend, tmpDir)
+	msg := cmd()
+
+	// Should not error
+	if em, ok := msg.(ecosystemMsg); ok && em.err != nil {
+		t.Fatalf("instantiateEcosystemCmd failed: %v", em.err)
+	}
+
+	// Verify AGENTS.md was created in tmpDir
+	agentsFile := filepath.Join(tmpDir, "AGENTS.md")
+	if _, err := os.Stat(agentsFile); os.IsNotExist(err) {
+		t.Fatalf("expected AGENTS.md to exist at %s", agentsFile)
+	}
+
+	// Verify AGENTS.md is populated (should contain the installed core skills, e.g., skill-creator)
+	content, err := os.ReadFile(agentsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contentStr := string(content)
+
+	if !strings.Contains(contentStr, "skill-creator") || !strings.Contains(contentStr, "skill-sync") || !strings.Contains(contentStr, "find-skills") {
+		t.Errorf("expected AGENTS.md to contain core skills, got:\n%s", contentStr)
 	}
 }

@@ -2,13 +2,13 @@ package ui
 
 import (
 	"fmt"
+	"github.com/charmbracelet/bubbles/list"
 	"os"
 	"path/filepath"
-	"github.com/charmbracelet/bubbles/list"
 	"skillsync/tui/internal/storage"
+	"skillsync/tui/internal/types"
 	"strings"
 	"testing"
-	"skillsync/tui/internal/types"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

@@ -331,3 +331,67 @@ Body content`
 		t.Errorf("Format should start with prefix, got: %q", formatted)
 	}
 }
+
+func TestParseFlexibleAutoInvoke(t *testing.T) {
+	tests := []struct {
+		name          string
+		yaml          string
+		skillName     string
+		expAutoInvoke []string
+	}{
+		{
+			name:          "Boolean True",
+			yaml:          "---\nauto_invoke: true\n---",
+			skillName:     "git-branches",
+			expAutoInvoke: []string{"git-branches"},
+		},
+		{
+			name:          "Boolean False",
+			yaml:          "---\nauto_invoke: false\n---",
+			skillName:     "git-branches",
+			expAutoInvoke: []string{},
+		},
+		{
+			name:          "String Value",
+			yaml:          "---\nauto_invoke: run-tests\n---",
+			skillName:     "tester",
+			expAutoInvoke: []string{"run-tests"},
+		},
+		{
+			name:          "Array Value",
+			yaml:          "---\nauto_invoke:\n  - action A\n  - action B\n---",
+			skillName:     "multi",
+			expAutoInvoke: []string{"action A", "action B"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			dir := filepath.Join(tmp, tt.skillName)
+			err := os.MkdirAll(dir, 0755)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(dir, "SKILL.md")
+			os.WriteFile(path, []byte(tt.yaml+"\n# Body"), 0644)
+
+			skill, err := Parse(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if len(skill.Metadata.AutoInvoke) != len(tt.expAutoInvoke) {
+				t.Fatalf("AutoInvoke length mismatch: got %d (%v), want %d (%v)",
+					len(skill.Metadata.AutoInvoke), skill.Metadata.AutoInvoke,
+					len(tt.expAutoInvoke), tt.expAutoInvoke)
+			}
+			for i, v := range skill.Metadata.AutoInvoke {
+				if v != tt.expAutoInvoke[i] {
+					t.Errorf("AutoInvoke[%d] = %q, want %q", i, v, tt.expAutoInvoke[i])
+				}
+			}
+		})
+	}
+}
+

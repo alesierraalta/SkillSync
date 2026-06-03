@@ -98,7 +98,7 @@ func TestRegenerateCommands_SkillSpecific(t *testing.T) {
 			Name: "deploy",
 			Metadata: types.Metadata{
 				Description: "Deploy to production",
-				AutoInvoke:  true,
+				AutoInvoke:  []string{"deploy"},
 			},
 		},
 	}
@@ -126,7 +126,7 @@ func TestRegenerateCommands_Idempotent(t *testing.T) {
 	cmdDir := filepath.Join(tmpDir, ".opencode", "commands")
 	os.MkdirAll(cmdDir, 0755)
 
-	skills := []types.Skill{{Name: "test", Metadata: types.Metadata{AutoInvoke: true}}}
+	skills := []types.Skill{{Name: "test", Metadata: types.Metadata{AutoInvoke: []string{"test"}}}}
 	
 	// First run
 	_, err := RegenerateCommands(tmpDir, skills, false)

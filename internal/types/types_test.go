@@ -7,7 +7,7 @@ func TestTypes(t *testing.T) {
 		ID: "test",
 		Metadata: Metadata{
 			Description: "desc",
-			AutoInvoke:  true,
+			AutoInvoke:  []string{"test"},
 		},
 	}
 
@@ -19,7 +19,7 @@ func TestTypes(t *testing.T) {
 		t.Error("Metadata Description mismatch")
 	}
 
-	if !s.Metadata.AutoInvoke {
+	if len(s.Metadata.AutoInvoke) == 0 || s.Metadata.AutoInvoke[0] != "test" {
 		t.Error("Metadata AutoInvoke mismatch")
 	}
 }

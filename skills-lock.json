@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "bash-defensive-patterns": {
+      "source": "wshobson/agents",
+      "sourceType": "autoskills-registry",
+      "computedHash": "1f566c2d9c3b50a784b05d08f6b08ebfeb31f038e4d4173f2d488484edb058a6"
+    },
     "find-skills": {
       "source": "vercel-labs/skills",
       "sourceType": "github",
@@ -10,6 +15,16 @@
       "source": "gentleman-programming/gentleman.dots",
       "sourceType": "github",
       "computedHash": "67f1727458f6d2e221d14e104e75bdd46cce88c4493f6548cdc4c7ab249fbbb2"
+    },
+    "golang-patterns": {
+      "source": "affaan-m/everything-claude-code",
+      "sourceType": "autoskills-registry",
+      "computedHash": "669ccfb110e3a3932669684801fc8992cda87ec6d9c1fd72ff13ae9f5e7c748e"
+    },
+    "golang-testing": {
+      "source": "affaan-m/everything-claude-code",
+      "sourceType": "autoskills-registry",
+      "computedHash": "4c1e0c6805760534d8fd1a9fa2e4b5eb700b402f054254383437bd679d341cbd"
     }
   }
 }

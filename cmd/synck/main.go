@@ -31,6 +31,14 @@ func main() {
 // GlobalInstaller is a function that performs the global installation.
 // It can be swapped in tests to avoid actual installation.
 var GlobalInstaller = install.GlobalInstall
+
+var AutoskillsInstaller = func(ctx context.Context) install.AutoskillsResult {
+	return install.AutoskillsInstall(ctx)
+}
+
+var AutoskillsPreflightChecker = func() error {
+	return install.AutoskillsPreflight()
+}
 var TUIRunner = ui.Run
 
 const version = "0.1.0"
@@ -96,26 +104,32 @@ func run(args []string) error {
 }
 
 func handleSync(args []string) error {
-	// Preserve legacy --scope behavior by delegating to the bash script path
-	hasScope := false
-	for _, a := range args {
-		if a == "--scope" {
-			hasScope = true
-			break
-		}
-	}
-	if hasScope {
-		return handleSyncLegacy(args)
-	}
-
 	f := flag.NewFlagSet("sync", flag.ContinueOnError)
 	verbose := f.Bool("verbose", false, "Show full diffs")
 	dryRun := f.Bool("dry-run", false, "Show what would be changed without writing")
+	autoskills := f.Bool("autoskills", false, "Run autoskills discovery before sync")
+	scope := f.String("scope", "", "Sync specific scope only")
 	if err := f.Parse(args); err != nil {
 		if err == flag.ErrHelp {
 			return nil
 		}
 		return err
+	}
+
+	if *autoskills {
+		fmt.Println("🔍 Running autoskills discovery...")
+		if err := AutoskillsPreflightChecker(); err != nil {
+			return fmt.Errorf("autoskills preflight failed: %w", err)
+		}
+		res := AutoskillsInstaller(context.Background())
+		if !res.Success {
+			fmt.Printf("⚠️  Autoskills failed: %v\n", res.Error)
+			if res.Output != "" {
+				fmt.Println(res.Output)
+			}
+			return fmt.Errorf("autoskills execution failed")
+		}
+		fmt.Println("✅ Autoskills discovery complete.")
 	}
 
 	// Find project root
@@ -139,6 +153,7 @@ func handleSync(args []string) error {
 		DryRun:     *dryRun,
 		ProgressCb: progressCb,
 		Storage:    storage.NewService(""),
+		Scope:      *scope,
 	}
 	engineReport, err := syncengine.Sync(root, opts)
 	if err != nil {
@@ -165,56 +180,6 @@ func handleSync(args []string) error {
 	fmt.Println("✅ Synchronization complete.")
 	fmt.Println()
 	fmt.Print(renderReport(merged, *verbose))
-
-	return nil
-}
-
-// handleSyncLegacy preserves the original bash-script execution path for --scope.
-func handleSyncLegacy(args []string) error {
-	fmt.Println("🔄 Running synchronization...")
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	root := findProjectRoot(cwd)
-	if root == "" {
-		return fmt.Errorf("could not find project root (missing .agents or .agent directory)")
-	}
-
-	scriptPath := filepath.Join(root, runner.DefaultSyncPath)
-	r := runner.NewRunner(scriptPath)
-	ctx := context.Background()
-
-	resChan := r.ExecuteSync(ctx, args)
-	res := <-resChan
-
-	if res.Stdout != "" {
-		fmt.Print(res.Stdout)
-	}
-	if res.Stderr != "" {
-		fmt.Fprint(os.Stderr, res.Stderr)
-	}
-
-	if res.Error != nil {
-		return fmt.Errorf("sync failed: %w", res.Error)
-	}
-
-	if res.ExitCode != 0 {
-		return fmt.Errorf("sync exited with code %d", res.ExitCode)
-	}
-
-	// Register project after successful legacy sync
-	s := storage.NewService("")
-	absRoot, _ := filepath.Abs(root)
-	_ = s.RegisterProject(absRoot)
-
-	fmt.Println("✅ Synchronization complete.")
-
-	// Auto-chain: run sync-opencode as a non-fatal post-step
-	if err := runSyncOpenCode(root, opencode.Options{}, true); err != nil {
-		fmt.Printf("⚠️ OpenCode sync warning: %v\n", err)
-	}
 
 	return nil
 }

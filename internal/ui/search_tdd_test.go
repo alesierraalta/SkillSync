@@ -181,3 +181,66 @@ func TestModel_SearchIntegration(t *testing.T) {
 		t.Errorf("expected 2 items after backspace, got %d", len(m.List.list.Items()))
 	}
 }
+
+func TestModel_SearchFocusClash(t *testing.T) {
+	tests := []struct {
+		key           string
+		initialScreen Screen
+	}{
+		{key: "e", initialScreen: ScreenList},
+		{key: "s", initialScreen: ScreenList},
+		{key: "y", initialScreen: ScreenList},
+		{key: "d", initialScreen: ScreenList},
+	}
+
+	for _, tt := range tests {
+		t.Run("key "+tt.key, func(t *testing.T) {
+			m := NewModel(NewBackend(storage.NewService("")))
+			m.Screen = tt.initialScreen
+			m.List.searchFocused = true
+			m.List.searchInput.Focus()
+
+			// Set up a selected item so that actions like 'e' or 'd' could be triggered
+			s1 := types.Skill{ID: "test-skill", Name: "test-skill-name"}
+			m.List.selected = &s1
+			m.List.allSkills = []list.Item{item{skill: s1}}
+			m.List.list.SetItems(m.List.allSkills)
+
+			var msg tea.Msg
+			msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tt.key)}
+
+			newModel, _ := m.Update(msg)
+			res := newModel.(Model)
+
+			// Ensure screen has NOT changed
+			if res.Screen != ScreenList {
+				t.Errorf("expected screen to remain ScreenList, got %v for key %s", res.Screen, tt.key)
+			}
+
+			// Ensure no commands were returned (or at least not commands initiating sync/storage)
+			// Actually, since List.Update(msg) might return some basic tea.Cmd, we should check specifically
+			// that the Screen didn't change and we are still on the list screen.
+			// Let's verify that the screen didn't change.
+			if tt.key == "e" && res.Screen == ScreenDetail {
+				t.Error("key 'e' triggered ScreenDetail even though search was focused")
+			}
+			if tt.key == "y" && res.Screen == ScreenSyncing {
+				t.Error("key 'y' triggered ScreenSyncing even though search was focused")
+			}
+			if tt.key == "d" && res.Screen == ScreenDeleteConfirm {
+				t.Error("key 'd' triggered ScreenDeleteConfirm even though search was focused")
+			}
+
+			// We can also verify that cmd is nil or not the action cmd.
+			// (Note: saving to storage returns a cmd but doesn't change screen, so we can verify if a cmd is returned or we can inspect m's state or behavior if possible).
+			// Wait, saveToStorageCmd returns a tea.Cmd. If we press 's', a cmd is returned. But when search is focused, 's' is just typed into the search bar, returning no cmd (or list cmd).
+			// Let's check that if key is "s", we didn't trigger storage/saving command. Or better: we just type "s" and the search input value becomes "s"!
+			if tt.key == "s" {
+				// Since we sent 's', it should be passed to the searchInput
+				if res.List.searchInput.Value() != "s" {
+					t.Errorf("expected searchInput value to be 's', got %q", res.List.searchInput.Value())
+				}
+			}
+		})
+	}
+}

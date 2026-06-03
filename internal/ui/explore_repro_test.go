@@ -32,7 +32,7 @@ func TestContentViewHeaderSyncBug(t *testing.T) {
 
 	// Manually move the list selection to Skill 2
 	m.List.list.Select(1)
-	
+
 	// Send a dummy key that is not intercepted (e.g. "a")
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")}
 	newModel, _ := m.Update(msg)
@@ -59,7 +59,7 @@ func TestContentViewScrollBug(t *testing.T) {
 	m.List.list.SetItems([]list.Item{item{skill: s1}})
 	m.List.list.Select(0)
 	m.selected = &s1
-	
+
 	// Set long content to make it scrollable
 	m.List.viewport.SetContent("line 1\nline 2\nline 3\nline 4\nline 5")
 	initialYOffset := m.List.viewport.YOffset
@@ -81,10 +81,10 @@ func TestSyncFinishedResetBug(t *testing.T) {
 			return &runner.SyncReport{}, nil
 		},
 		InstallCoreSkillFunc: func(name string) error { return nil },
-		EnsureAgentsMDFunc:   func() error { return nil },
+		EnsureAgentsMDFunc:   func(root string) error { return nil },
 		RegisterProjectFunc:  func(path string) error { return nil },
 	})
-	
+
 	// 1. First sync finishes
 	m.Screen = ScreenSyncing
 	newModel, _ := m.Update(runner.SyncResult{ExitCode: 0})
@@ -111,12 +111,12 @@ func TestInstallerStoredSkillsInitBug(t *testing.T) {
 		},
 	}
 	m := NewModel(backend)
-	
+
 	// 1. Load stored skills while on Home screen
 	msg := m.loadStoredSkillsCmd()()
 	newModel, _ := m.Update(msg)
 	m = newModel.(Model)
-	
+
 	if len(m.storedSkills) == 0 {
 		t.Fatalf("expected storedSkills to be loaded")
 	}

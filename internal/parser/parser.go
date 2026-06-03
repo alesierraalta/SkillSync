@@ -17,20 +17,26 @@ func Parse(path string) (*types.Skill, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, err := ParseContent(string(raw))
+	folderName := filepath.Base(filepath.Dir(path))
+	s, err := ParseContentWithName(string(raw), folderName)
 	if err != nil {
 		return nil, err
 	}
 	s.ID = filepath.ToSlash(path)
 	s.Path = path
 	if s.Name == "" {
-		s.Name = filepath.Base(filepath.Dir(path))
+		s.Name = folderName
 	}
 	return s, nil
 }
 
 // ParseContent extracts skill info from raw string content.
 func ParseContent(content string) (*types.Skill, error) {
+	return ParseContentWithName(content, "")
+}
+
+// ParseContentWithName extracts skill info from raw string content using a fallback name.
+func ParseContentWithName(content string, defaultName string) (*types.Skill, error) {
 	parts := strings.SplitN(content, "---", 3)
 
 	if len(parts) < 3 {
@@ -44,6 +50,7 @@ func ParseContent(content string) (*types.Skill, error) {
 	body := strings.TrimSpace(parts[2])
 
 	var flexible struct {
+		Name        string      `yaml:"name"`
 		Description string      `yaml:"description"`
 		AutoInvoke  interface{} `yaml:"auto_invoke"`
 		Scope       interface{} `yaml:"scope"`
@@ -63,11 +70,17 @@ func ParseContent(content string) (*types.Skill, error) {
 	meta.Description = flexible.Description
 	meta.LocalOnly = flexible.LocalOnly
 
-	// Handle AutoInvoke safely (bool or non-empty string)
+	skillName := flexible.Name
+	if skillName == "" {
+		skillName = defaultName
+	}
+
 	if flexible.Metadata.AutoInvoke != nil {
-		meta.AutoInvoke = isTrue(flexible.Metadata.AutoInvoke)
+		meta.AutoInvoke = normalizeAutoInvoke(flexible.Metadata.AutoInvoke, skillName)
 	} else if flexible.AutoInvoke != nil {
-		meta.AutoInvoke = isTrue(flexible.AutoInvoke)
+		meta.AutoInvoke = normalizeAutoInvoke(flexible.AutoInvoke, skillName)
+	} else {
+		meta.AutoInvoke = []string{}
 	}
 
 	if flexible.Metadata.Scope != nil {
@@ -77,20 +90,49 @@ func ParseContent(content string) (*types.Skill, error) {
 	}
 
 	return &types.Skill{
+		Name:     flexible.Name,
 		Prefix:   prefix,
 		Metadata: meta,
 		RawBody:  body,
 	}, nil
 }
 
-func isTrue(v interface{}) bool {
+func normalizeAutoInvoke(v interface{}, name string) []string {
+	if v == nil {
+		return []string{}
+	}
 	switch val := v.(type) {
 	case bool:
-		return val
+		if val {
+			if name != "" {
+				return []string{name}
+			}
+			return []string{}
+		}
+		return []string{}
 	case string:
-		return val != "" && val != "false"
+		if val == "" || val == "false" {
+			return []string{}
+		}
+		if val == "true" {
+			if name != "" {
+				return []string{name}
+			}
+			return []string{}
+		}
+		return []string{val}
+	case []interface{}:
+		var result []string
+		for _, item := range val {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	case []string:
+		return val
 	}
-	return false
+	return []string{}
 }
 
 // Save writes SKILL.md back with comments preserved.
@@ -110,7 +152,15 @@ func Format(skill *types.Skill) (string, error) {
 
 	if yamlStr == "" {
 		// No existing file or no frontmatter, create minimal YAML
-		return skill.Prefix + "---\nscope: " + skill.Metadata.Scope + "\n---\n" + skill.RawBody, nil
+		var autoInvokeLines []string
+		for _, trigger := range skill.Metadata.AutoInvoke {
+			autoInvokeLines = append(autoInvokeLines, fmt.Sprintf("  - %s", trigger))
+		}
+		var autoInvokeYaml string
+		if len(autoInvokeLines) > 0 {
+			autoInvokeYaml = "\nauto_invoke:\n" + strings.Join(autoInvokeLines, "\n")
+		}
+		return skill.Prefix + "---\nscope: " + skill.Metadata.Scope + autoInvokeYaml + "\n---\n" + skill.RawBody, nil
 	}
 
 	var node yaml.Node
@@ -167,6 +217,20 @@ func Save(path string, skill *types.Skill) error {
 	return os.Rename(tmpPath, path)
 }
 
+func updateSequenceNode(node *yaml.Node, values []string) {
+	node.Kind = yaml.SequenceNode
+	node.Tag = "!!seq"
+	node.Value = ""
+	node.Content = nil
+	for _, val := range values {
+		node.Content = append(node.Content, &yaml.Node{
+			Kind:  yaml.ScalarNode,
+			Tag:   "!!str",
+			Value: val,
+		})
+	}
+}
+
 func updateMappingNode(mapping *yaml.Node, meta types.Metadata) {
 	// Simple map for fields
 	fields := map[string]string{
@@ -175,9 +239,10 @@ func updateMappingNode(mapping *yaml.Node, meta types.Metadata) {
 	}
 	
 	boolFields := map[string]bool{
-		"auto_invoke": meta.AutoInvoke,
 		"local_only":  meta.LocalOnly,
 	}
+
+	hasAutoInvoke := false
 
 	for i := 0; i < len(mapping.Content); i += 2 {
 		key := mapping.Content[i].Value
@@ -189,6 +254,9 @@ func updateMappingNode(mapping *yaml.Node, meta types.Metadata) {
 			mapping.Content[i+1].Value = fmt.Sprintf("%v", bVal)
 			mapping.Content[i+1].Tag = "!!bool"
 			delete(boolFields, key)
+		} else if key == "auto_invoke" {
+			updateSequenceNode(mapping.Content[i+1], meta.AutoInvoke)
+			hasAutoInvoke = true
 		}
 	}
 
@@ -205,8 +273,16 @@ func updateMappingNode(mapping *yaml.Node, meta types.Metadata) {
 			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: fmt.Sprintf("%v", v)},
 		)
 	}
-}
 
+	if !hasAutoInvoke {
+		seqNode := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		updateSequenceNode(seqNode, meta.AutoInvoke)
+		mapping.Content = append(mapping.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "auto_invoke"},
+			seqNode,
+		)
+	}
+}
 
 func normalizeScope(v interface{}) string {
 	switch val := v.(type) {

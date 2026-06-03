@@ -50,7 +50,7 @@ func RegenerateCommands(root string, skills []types.Skill, dryRun bool) (*runner
 
 	// Skill-specific commands
 	for _, s := range skills {
-		if !s.Metadata.AutoInvoke {
+		if len(s.Metadata.AutoInvoke) == 0 {
 			continue
 		}
 		filename := s.Name + ".md"

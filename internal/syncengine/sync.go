@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"skillsync/tui/internal/diff"
@@ -17,6 +18,7 @@ type SyncOptions struct {
 	DryRun     bool
 	ProgressCb func(stage string, done, total int)
 	Storage    *storage.Service
+	Scope      string
 }
 
 func Sync(root string, opts SyncOptions) (*runner.SyncReport, error) {
@@ -42,7 +44,7 @@ func Sync(root string, opts SyncOptions) (*runner.SyncReport, error) {
 		before = string(content)
 	}
 
-	if err := UpdateAgentsMarkdown(root, skills, opts.DryRun); err != nil {
+	if err := UpdateAgentsMarkdown(root, skills, opts.Scope, opts.DryRun); err != nil {
 		return report, fmt.Errorf("update AGENTS.md: %w", err)
 	}
 
@@ -80,6 +82,14 @@ func Sync(root string, opts SyncOptions) (*runner.SyncReport, error) {
 		if err := opts.Storage.RegisterProject(absRoot); err != nil {
 			return report, fmt.Errorf("failed to register project: %w", err)
 		}
+	}
+
+	cleanupChanges, err := cleanupLegacyScripts(root, opts.DryRun)
+	if err != nil {
+		return report, fmt.Errorf("cleanup legacy scripts: %w", err)
+	}
+	if len(cleanupChanges) > 0 {
+		report.Changes = append(report.Changes, cleanupChanges...)
 	}
 
 	return report, nil
@@ -124,7 +134,7 @@ func AggregateMetadata(skills []types.Skill, targetScope string) []types.Skill {
 	return matched
 }
 
-func UpdateAgentsMarkdown(root string, skills []types.Skill, dryRun bool) error {
+func UpdateAgentsMarkdown(root string, skills []types.Skill, scope string, dryRun bool) error {
 	agentsPath := filepath.Join(root, "AGENTS.md")
 	
 	if _, err := os.Stat(agentsPath); os.IsNotExist(err) {
@@ -192,13 +202,37 @@ func UpdateAgentsMarkdown(root string, skills []types.Skill, dryRun bool) error 
 			out = append(out, "| Action                              | Skill      |")
 			out = append(out, "| ----------------------------------- | ---------- |")
 			
-			rootSkills := AggregateMetadata(skills, "root")
+			targetScope := scope
+			if targetScope == "" {
+				targetScope = "root"
+			}
+			rootSkills := AggregateMetadata(skills, targetScope)
+			type autoInvokeRow struct {
+				Action    string
+				SkillName string
+			}
+			var rows []autoInvokeRow
 			for _, s := range rootSkills {
-				if s.Metadata.AutoInvoke {
-					action := s.Name
-					paddedAction := fmt.Sprintf("%-35s", action)
-					out = append(out, fmt.Sprintf("| %s | `%s` |", paddedAction, s.Name))
+				for _, action := range s.Metadata.AutoInvoke {
+					rows = append(rows, autoInvokeRow{
+						Action:    action,
+						SkillName: s.Name,
+					})
 				}
+			}
+
+			sort.Slice(rows, func(i, j int) bool {
+				aAct := strings.ToLower(rows[i].Action)
+				bAct := strings.ToLower(rows[j].Action)
+				if aAct != bAct {
+					return aAct < bAct
+				}
+				return strings.ToLower(rows[i].SkillName) < strings.ToLower(rows[j].SkillName)
+			})
+
+			for _, r := range rows {
+				paddedAction := fmt.Sprintf("%-35s", r.Action)
+				out = append(out, fmt.Sprintf("| %s | `%s` |", paddedAction, r.SkillName))
 			}
 			
 			sectionReplaced = true
@@ -224,3 +258,56 @@ func UpdateAgentsMarkdown(root string, skills []types.Skill, dryRun bool) error 
 	
 	return nil
 }
+
+func cleanupLegacyScripts(root string, dryRun bool) ([]runner.FileChange, error) {
+	var changes []runner.FileChange
+	skillsDir := filepath.Join(root, ".agents", "skills")
+	
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	
+	legacyFiles := []string{"sync.sh", "sync_test.sh", "sync_test.ps1"}
+	
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		assetsDir := filepath.Join(skillsDir, entry.Name(), "assets")
+		for _, legacyName := range legacyFiles {
+			path := filepath.Join(assetsDir, legacyName)
+			if _, err := os.Stat(path); err == nil {
+				relPath, err := filepath.Rel(root, path)
+				if err != nil {
+					relPath = path
+				}
+				
+				var beforeContent string
+				if raw, err := os.ReadFile(path); err == nil {
+					beforeContent = string(raw)
+				}
+				
+				change := runner.FileChange{
+					Path:    filepath.ToSlash(relPath),
+					Status:  "deleted",
+					Before:  beforeContent,
+					After:   "",
+					Summary: "deleted legacy script",
+				}
+				changes = append(changes, change)
+				
+				if !dryRun {
+					if err := os.Remove(path); err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
+	}
+	return changes, nil
+}
+

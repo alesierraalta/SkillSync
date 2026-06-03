@@ -1,6 +1,6 @@
 ---
 managed_by: skillsync
-description: Serena MCP and tool-selection discipline for high-efficiency codebase navigation, symbolic editing, and complex task delegation.
+description: Serena MCP para navegacion semantica, edicion por simbolos y refactors con bajo coste de tokens. Trigger: usar Serena MCP, buscar declaraciones, referencias, implementaciones, diagnosticos o editar codigo por simbolo.
 
 ---
 

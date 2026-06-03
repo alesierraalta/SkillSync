@@ -29,7 +29,7 @@ func RegenerateAfterDelete(root string) error {
 	}
 
 	// Step 2: Update AGENTS.md (non-fatal)
-	if err := syncengine.UpdateAgentsMarkdown(root, skills, false); err != nil {
+	if err := syncengine.UpdateAgentsMarkdown(root, skills, "", false); err != nil {
 		errs = append(errs, fmt.Errorf("step 2 update AGENTS.md: %w", err))
 	}
 
@@ -44,19 +44,19 @@ func RegenerateAfterDelete(root string) error {
 	// Step 5: Add base command skills (inline slice)
 	allSkills := make([]types.Skill, 0, len(mirroredSkills)+5)
 	allSkills = append(allSkills, types.Skill{
-		Name: "skill", Metadata: types.Metadata{Description: "Entry point for skill management", AutoInvoke: true},
+		Name: "skill", Metadata: types.Metadata{Description: "Entry point for skill management", AutoInvoke: []string{"skill"}},
 	})
 	allSkills = append(allSkills, types.Skill{
-		Name: "find", Metadata: types.Metadata{Description: "Search and list existing skills", AutoInvoke: true},
+		Name: "find", Metadata: types.Metadata{Description: "Search and list existing skills", AutoInvoke: []string{"find"}},
 	})
 	allSkills = append(allSkills, types.Skill{
-		Name: "create", Metadata: types.Metadata{Description: "Create a new agent skill from a prompt", AutoInvoke: true},
+		Name: "create", Metadata: types.Metadata{Description: "Create a new agent skill from a prompt", AutoInvoke: []string{"create"}},
 	})
 	allSkills = append(allSkills, types.Skill{
-		Name: "sync", Metadata: types.Metadata{Description: "Synchronize skills and update AGENTS.md/OPENCODE.md", AutoInvoke: true},
+		Name: "sync", Metadata: types.Metadata{Description: "Synchronize skills and update AGENTS.md/OPENCODE.md", AutoInvoke: []string{"sync"}},
 	})
 	allSkills = append(allSkills, types.Skill{
-		Name: "fullskills", Metadata: types.Metadata{Description: "Complete skill workflow", AutoInvoke: true},
+		Name: "fullskills", Metadata: types.Metadata{Description: "Complete skill workflow", AutoInvoke: []string{"fullskills"}},
 	})
 	allSkills = append(allSkills, mirroredSkills...)
 

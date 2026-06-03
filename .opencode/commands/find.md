@@ -1,6 +1,6 @@
 ---
 managed_by: skillsync
-description: Find skills in the registry
+description: Search and list existing skills
 ---
 
 /synck find "$!1"
