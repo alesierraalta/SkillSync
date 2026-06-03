@@ -36,9 +36,12 @@ Learn more about the project through our detailed documentation:
 
 - `cmd/`: Application entrypoints.
 - `internal/`: Core domain logic (UI, Discovery, Sandbox, Ecosystem).
+  - `internal/agentdetect`: Read-only detector for installed AI agent tools (Claude Code, Gemini CLI, Antigravity, OpenCode, Codex, Qwen Code, Pi, Cursor, Copilot). Enumerates each tool's MCP servers and plugins. Accessible via TUI screen "6. Agent Ecosystem". Performance target: <100ms full scan.
 - `docs/`: Comprehensive project documentation.
 - `scripts/`: Utility scripts (sync, setup).
 
 ## 📄 Registry
 
 See **[AGENTS.md](AGENTS.md)** for a full list of currently available skills and their auto-invoke rules.
+
+<!-- gga-verify-test -->
