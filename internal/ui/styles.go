@@ -86,4 +86,9 @@ var (
 	warningNoticeStyle = lipgloss.NewStyle().Bold(true).Foreground(DefaultTheme.Warning)
 	// footerKeyStyle renders key labels in the footer with bold Primary color.
 	footerKeyStyle = lipgloss.NewStyle().Foreground(DefaultTheme.Primary).Bold(true)
+
+	// Agent Ecosystem status styles (consume DefaultTheme.*; see theme.go).
+	agentEcoStatusOKStyle      = lipgloss.NewStyle().Foreground(DefaultTheme.Success).Bold(true)
+	agentEcoStatusWarningStyle = lipgloss.NewStyle().Foreground(DefaultTheme.Warning).Bold(true)
+	agentEcoStatusMutedStyle   = lipgloss.NewStyle().Foreground(DefaultTheme.Muted)
 )
