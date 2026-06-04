@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/charmbracelet/lipgloss"
+
+	"skillsync/tui/internal/agentdetect"
 )
 
 func (m Model) View() string {
@@ -248,66 +250,103 @@ func (m Model) deleteConfirmView() string {
 }
 
 // agentEcosystemView renders the Agent Ecosystem screen.
-// It shows a list of detected AI agent tools on the left and a detail panel
-// for the selected agent (MCP servers + plugins) on the right.
-// Pure rendering — no IO, no mutations.
+// Mirrors InstallerModel.OptionsView card layout (banner + card + selected
+// row + detail panel). All styles consumed are package-level vars in
+// styles.go; zero lipgloss.NewStyle() per call. Pure rendering — no IO, no
+// mutations. Spec: LY-1, LY-1.1, LY-1.2, LY-1.3, SL-1, SL-2, DP-1, DP-2.
 func (m Model) agentEcosystemView() string {
-	title := titleStyle.Render("Agent Ecosystem")
-	s := title + "\n\n"
+	// Card body width: leave 2 columns of breathing room for the border.
+	width := m.Width - 2
+	if width < 0 {
+		width = 0
+	}
 
+	// Height-aware card border, identical to installer_model.go:128-133.
+	var localCardStyle = cardStyle
+	if m.Height < 24 {
+		localCardStyle = localCardStyle.Border(lipgloss.NormalBorder()).MarginBottom(0)
+	} else {
+		localCardStyle = localCardStyle.Border(lipgloss.RoundedBorder()).MarginBottom(1)
+	}
+
+	banner := bannerStyle.Render("AGENT ECOSYSTEM")
+
+	// Empty state — no card, just the banner + a hint line.
 	if len(m.agentEcosystem) == 0 {
-		s += "  No agents detected.\n"
-		return s
+		return banner + "\n" + hintStyle.Render("  No agents detected.") + "\n"
 	}
 
+	// Build the card body as a []string and JoinVertical to assemble.
+	// This is the same primitive InstallerModel.OptionsView uses, and it
+	// keeps the per-line assembly allocation-cheap (each entry is already a
+	// fully-rendered string). spec LY-1.
+	lines := make([]string, 0, len(m.agentEcosystem)+2)
+	lines = append(lines, cardTitleStyle.Render("[1] DETECTED AGENTS"))
 	for i, agent := range m.agentEcosystem {
-		cursor := "  "
-		if m.selectedAgent == i {
-			cursor = "> "
-		}
+		lines = append(lines, m.renderAgentRow(agent, i == m.selectedAgent, width))
+	}
+	if m.selectedAgent >= 0 && m.selectedAgent < len(m.agentEcosystem) {
+		lines = append(lines, m.renderAgentDetail(m.agentEcosystem[m.selectedAgent], width))
+	}
+	body := lipgloss.JoinVertical(lipgloss.Left, lines...)
 
-		// Status tag
-		statusTag := ""
-		switch agent.Status {
-		case "unreadable":
-			statusTag = " [unreadable]"
-		case "present-only":
-			statusTag = " [present-only]"
-		}
+	return banner + "\n" + localCardStyle.Width(width).Render(body) + "\n"
+}
 
-		row := fmt.Sprintf("%s%s%s", cursor, agent.Name, statusTag)
-		if m.selectedAgent == i {
-			row = selectedItemStyle.Render(row)
-		}
-		s += row + "\n"
+// renderAgentRow renders one agent row inside the Agent Ecosystem card.
+// When selected, the whole row is wrapped in selectedItemStyle — the
+// affordance escape lands on the same line as the agent name so the line-scan
+// invariant in TestAgentEcosystemView_SelectedItemStyled holds.
+// Pure rendering — no IO, no mutations.
+func (m Model) renderAgentRow(agent agentdetect.AgentInfo, selected bool, width int) string {
+	_ = width // reserved for future row-width truncation; not used today.
+	cursor := "  "
+	if selected {
+		cursor = "> "
+	}
+	statusStyle, glyph := statusStyleFor(agent.Status)
+	// Plain string concat (not lipgloss.JoinHorizontal) — the cursor, glyph
+	// and name are all single-line, so the visual alignment is implicit.
+	// This keeps the alloc footprint to 1 (statusStyle.Render) + 1 (selectedItemStyle.Render)
+	// per row instead of the JoinHorizontal slice + width computation.
+	row := cursor + statusStyle.Render(glyph) + " " + agent.Name
+	if selected {
+		row = selectedItemStyle.Render(row)
+	}
+	return row
+}
 
-		// Detail panel for selected agent
-		if m.selectedAgent == i {
-			if len(agent.MCPServers) > 0 {
-				s += "    MCP Servers:\n"
-				for _, srv := range agent.MCPServers {
-					s += fmt.Sprintf("      - %s (%s)\n", srv.Name, srv.Transport)
-				}
-			}
-			if len(agent.Plugins) > 0 {
-				s += "    Plugins:\n"
-				for _, p := range agent.Plugins {
-					enabled := ""
-					if p.Enabled {
-						enabled = " [enabled]"
-					}
-					version := ""
-					if p.Version != "" {
-						version = " v" + p.Version
-					}
-					s += fmt.Sprintf("      - %s%s%s\n", p.Name, version, enabled)
-				}
-			}
-			if len(agent.MCPServers) == 0 && len(agent.Plugins) == 0 {
-				s += "    No MCP servers or plugins configured.\n"
-			}
-		}
+// renderAgentDetail renders the MCP Servers + Plugins subsections for the
+// selected agent. When both lists are empty, it returns the styled hint
+// message. Pure rendering — no IO, no mutations.
+// Spec: DP-1, DP-1.1, DP-1.2, DP-1.3, DP-2.
+func (m Model) renderAgentDetail(agent agentdetect.AgentInfo, width int) string {
+	_ = width
+	if len(agent.MCPServers) == 0 && len(agent.Plugins) == 0 {
+		return hintStyle.Render("  No MCP servers or plugins configured.")
 	}
 
-	return s
+	lines := make([]string, 0, 4)
+	if len(agent.MCPServers) > 0 {
+		lines = append(lines, cardTitleStyle.Render("MCP Servers"))
+		for _, srv := range agent.MCPServers {
+			// • + name + (transport) — bullet is hintStyle, name is literal.
+			lines = append(lines, "  "+hintStyle.Render("•")+" "+srv.Name+fmt.Sprintf(" (%s)", srv.Transport))
+		}
+	}
+	if len(agent.Plugins) > 0 {
+		lines = append(lines, cardTitleStyle.Render("Plugins"))
+		for _, p := range agent.Plugins {
+			marker := "[ ]"
+			if p.Enabled {
+				marker = checkmarkStyle.Render("[x]")
+			}
+			version := ""
+			if p.Version != "" {
+				version = " v" + p.Version
+			}
+			lines = append(lines, "  "+marker+" "+p.Name+version)
+		}
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }

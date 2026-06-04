@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	"skillsync/tui/internal/agentdetect"
@@ -124,4 +125,90 @@ func TestHandleAgentEcosystemEscReturnsHome(t *testing.T) {
 	if updated.HomeCursor != 5 {
 		t.Errorf("HomeCursor: got %d, want 5", updated.HomeCursor)
 	}
+}
+
+// ─── End-to-end: navigation + card layout + affordance + MCP names ──────────────
+
+// TestIntegration_AgentEcosystem_EndToEnd_FullView exercises the full flow
+// described in spec INT-1.1: load 3 agents, press j/j/k/enter, assert the
+// selected row carries the affordance escape AND the rendered card body
+// contains the selected agent's MCP server name. The "enter" press is a
+// no-op for screen change in the Agent Eco flow (the screen stays the same).
+// Spec: INT-1, INT-1.1, SL-1, SL-1.1, SL-2, SL-2.1, DP-1.1.
+func TestIntegration_AgentEcosystem_EndToEnd_FullView(t *testing.T) {
+	withANSI256(func() {
+		m := newTestModel(t)
+		m.Screen = ScreenAgentEcosystem
+
+		agents := []agentdetect.AgentInfo{
+			{
+				Name:       "claude",
+				Present:    true,
+				Status:     agentdetect.StatusPresentOnly,
+				MCPServers: []agentdetect.MCPServer{{Name: "filesystem", Transport: "stdio"}},
+			},
+			{
+				Name:       "opencode",
+				Present:    true,
+				Status:     agentdetect.StatusOK,
+				MCPServers: []agentdetect.MCPServer{{Name: "synck-tools", Transport: "stdio"}},
+			},
+			{
+				Name:    "aider",
+				Present: true,
+				Status:  agentdetect.StatusUnreadable,
+			},
+		}
+		m.agentEcosystem = agents
+
+		// Navigation: j (1) -> j (2) -> k (1). Final selectedAgent == 1.
+		for _, key := range []string{"j", "j", "k"} {
+			newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+			m = newM.(Model)
+		}
+		if m.selectedAgent != 1 {
+			t.Fatalf("selectedAgent after j/j/k: got %d, want 1", m.selectedAgent)
+		}
+
+		// Enter is a no-op for screen change in the Agent Eco flow.
+		newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m = newM.(Model)
+		if m.Screen != ScreenAgentEcosystem {
+			t.Errorf("Screen after enter: got %v, want ScreenAgentEcosystem", m.Screen)
+		}
+
+		// Render and assert content.
+		view := m.View()
+
+		// (1) Banner — REQ-LY-1
+		if !strings.Contains(view, "AGENT ECOSYSTEM") {
+			t.Errorf("expected view to contain 'AGENT ECOSYSTEM' banner, got:\n%s", view)
+		}
+
+		// (2) Card title
+		if !strings.Contains(view, "[1] DETECTED AGENTS") {
+			t.Errorf("expected view to contain '[1] DETECTED AGENTS' card title, got:\n%s", view)
+		}
+
+		// (3) Selected agent's name on a line that carries the affordance escape.
+		var opencodeLine string
+		for _, line := range strings.Split(view, "\n") {
+			if strings.Contains(line, "opencode") {
+				opencodeLine = line
+				break
+			}
+		}
+		if opencodeLine == "" {
+			t.Fatal("expected to find 'opencode' line in view, got:\n" + view)
+		}
+		if !strings.Contains(opencodeLine, ansiSelectedRow) {
+			t.Errorf("expected 'opencode' line to carry affordance escape %q, got:\n%q",
+				ansiSelectedRow, opencodeLine)
+		}
+
+		// (4) Selected agent's MCP server name appears in the card body.
+		if !strings.Contains(view, "synck-tools") {
+			t.Errorf("expected view to contain MCP server 'synck-tools', got:\n%s", view)
+		}
+	})
 }
