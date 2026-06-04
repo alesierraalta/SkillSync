@@ -185,4 +185,36 @@ func TestAgentEcosystemView_BannerAndCardBorders(t *testing.T) {
 			t.Errorf("expected NO RoundedBorder corners in short-terminal render, got:\n%s", view)
 		}
 	})
+
+	t.Run("detail=empty", func(t *testing.T) {
+		m := NewModel(NewBackend(storage.NewService("")))
+		m.Screen = ScreenAgentEcosystem
+		m.Width, m.Height = 120, 40
+		m.agentEcosystem = newBannerBorderAgents()
+		m.selectedAgent = 2
+
+		view := m.agentEcosystemView()
+		if !strings.Contains(view, "No MCP servers or plugins configured.") {
+			t.Errorf("expected empty-detail hint in render, got:\n%s", view)
+		}
+		if strings.Contains(view, "context7") || strings.Contains(view, "synck-bridge") {
+			t.Errorf("expected NO MCP/plugin names in empty-detail render, got:\n%s", view)
+		}
+	})
+
+	t.Run("detail=plugin", func(t *testing.T) {
+		m := NewModel(NewBackend(storage.NewService("")))
+		m.Screen = ScreenAgentEcosystem
+		m.Width, m.Height = 120, 40
+		m.agentEcosystem = newBannerBorderAgents()
+		m.selectedAgent = 1
+
+		view := m.agentEcosystemView()
+		if !strings.Contains(view, "synck-bridge") {
+			t.Errorf("expected plugin name 'synck-bridge' in render, got:\n%s", view)
+		}
+		if !strings.Contains(view, "Plugins") {
+			t.Errorf("expected 'Plugins' subsection title in render, got:\n%s", view)
+		}
+	})
 }
