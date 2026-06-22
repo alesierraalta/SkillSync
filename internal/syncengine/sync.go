@@ -84,9 +84,9 @@ func Sync(root string, opts SyncOptions) (*runner.SyncReport, error) {
 		}
 	}
 
-	cleanupChanges, err := cleanupLegacyScripts(root, opts.DryRun)
+	cleanupChanges, err := cleanupLegacyHarnessArtifacts(root, opts.DryRun)
 	if err != nil {
-		return report, fmt.Errorf("cleanup legacy scripts: %w", err)
+		return report, fmt.Errorf("cleanup legacy harness artifacts: %w", err)
 	}
 	if len(cleanupChanges) > 0 {
 		report.Changes = append(report.Changes, cleanupChanges...)
@@ -127,25 +127,43 @@ func DiscoverSkills(root string) ([]types.Skill, error) {
 func AggregateMetadata(skills []types.Skill, targetScope string) []types.Skill {
 	var matched []types.Skill
 	for _, s := range skills {
-		if strings.Contains(s.Metadata.Scope, targetScope) {
+		if scopeMatches(s.Metadata.Scope, targetScope) {
 			matched = append(matched, s)
 		}
 	}
 	return matched
 }
 
+func scopeMatches(scope, targetScope string) bool {
+	if targetScope == "" {
+		targetScope = "root"
+	}
+
+	for _, part := range strings.Split(scope, ",") {
+		if strings.TrimSpace(part) == targetScope {
+			return true
+		}
+	}
+	return false
+}
+
+func sanitizeMarkdownCell(value string) string {
+	value = strings.Join(strings.Fields(value), " ")
+	return strings.ReplaceAll(value, "|", `\|`)
+}
+
 func UpdateAgentsMarkdown(root string, skills []types.Skill, scope string, dryRun bool) error {
 	agentsPath := filepath.Join(root, "AGENTS.md")
-	
+
 	if _, err := os.Stat(agentsPath); os.IsNotExist(err) {
 		return nil
 	}
-	
+
 	content, err := os.ReadFile(agentsPath)
 	if err != nil {
 		return err
 	}
-	
+
 	lines := strings.Split(string(content), "\n")
 	hasAvailable := false
 	hasAutoInvoke := false
@@ -178,7 +196,7 @@ func UpdateAgentsMarkdown(root string, skills []types.Skill, scope string, dryRu
 
 			for _, s := range skills {
 				rel, _ := filepath.Rel(root, s.Path)
-				desc := s.Metadata.Description
+				desc := sanitizeMarkdownCell(s.Metadata.Description)
 				if desc == "" {
 					desc = "—"
 				}
@@ -186,7 +204,10 @@ func UpdateAgentsMarkdown(root string, skills []types.Skill, scope string, dryRu
 				if len(desc) > 100 {
 					desc = desc[:97] + "..."
 				}
-				out = append(out, fmt.Sprintf("| `%s` | %s | [%s](%s) |", s.Name, desc, filepath.Base(s.Path), filepath.ToSlash(rel)))
+				name := sanitizeMarkdownCell(s.Name)
+				locBase := sanitizeMarkdownCell(filepath.Base(s.Path))
+				locRel := sanitizeMarkdownCell(filepath.ToSlash(rel))
+				out = append(out, fmt.Sprintf("| `%s` | %s | [%s](%s) |", name, desc, locBase, locRel))
 			}
 			sectionReplaced = true
 			continue
@@ -201,7 +222,7 @@ func UpdateAgentsMarkdown(root string, skills []types.Skill, scope string, dryRu
 			out = append(out, "")
 			out = append(out, "| Action                              | Skill      |")
 			out = append(out, "| ----------------------------------- | ---------- |")
-			
+
 			targetScope := scope
 			if targetScope == "" {
 				targetScope = "root"
@@ -231,14 +252,16 @@ func UpdateAgentsMarkdown(root string, skills []types.Skill, scope string, dryRu
 			})
 
 			for _, r := range rows {
-				paddedAction := fmt.Sprintf("%-35s", r.Action)
-				out = append(out, fmt.Sprintf("| %s | `%s` |", paddedAction, r.SkillName))
+				action := sanitizeMarkdownCell(r.Action)
+				skillName := sanitizeMarkdownCell(r.SkillName)
+				paddedAction := fmt.Sprintf("%-35s", action)
+				out = append(out, fmt.Sprintf("| %s | `%s` |", paddedAction, skillName))
 			}
-			
+
 			sectionReplaced = true
 			continue
 		}
-		
+
 		if inSection || inAvailableSection {
 			if strings.HasPrefix(line, "### ") || (inAvailableSection && strings.HasPrefix(line, "## ")) {
 				inSection = false
@@ -248,21 +271,21 @@ func UpdateAgentsMarkdown(root string, skills []types.Skill, scope string, dryRu
 			}
 			continue
 		}
-		
+
 		out = append(out, line)
 	}
-	
+
 	if sectionReplaced && !dryRun {
 		return os.WriteFile(agentsPath, []byte(strings.Join(out, "\n")), 0644)
 	}
-	
+
 	return nil
 }
 
-func cleanupLegacyScripts(root string, dryRun bool) ([]runner.FileChange, error) {
+func cleanupLegacyHarnessArtifacts(root string, dryRun bool) ([]runner.FileChange, error) {
 	var changes []runner.FileChange
 	skillsDir := filepath.Join(root, ".agents", "skills")
-	
+
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -270,9 +293,9 @@ func cleanupLegacyScripts(root string, dryRun bool) ([]runner.FileChange, error)
 		}
 		return nil, err
 	}
-	
+
 	legacyFiles := []string{"sync.sh", "sync_test.sh", "sync_test.ps1"}
-	
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -285,21 +308,21 @@ func cleanupLegacyScripts(root string, dryRun bool) ([]runner.FileChange, error)
 				if err != nil {
 					relPath = path
 				}
-				
+
 				var beforeContent string
 				if raw, err := os.ReadFile(path); err == nil {
 					beforeContent = string(raw)
 				}
-				
+
 				change := runner.FileChange{
 					Path:    filepath.ToSlash(relPath),
 					Status:  "deleted",
 					Before:  beforeContent,
 					After:   "",
-					Summary: "deleted legacy script",
+					Summary: "deleted legacy harness artifact",
 				}
 				changes = append(changes, change)
-				
+
 				if !dryRun {
 					if err := os.Remove(path); err != nil {
 						return nil, err
@@ -310,4 +333,3 @@ func cleanupLegacyScripts(root string, dryRun bool) ([]runner.FileChange, error)
 	}
 	return changes, nil
 }
-

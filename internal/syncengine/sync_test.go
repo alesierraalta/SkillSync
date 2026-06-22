@@ -3,9 +3,9 @@ package syncengine
 import (
 	"os"
 	"path/filepath"
+	"skillsync/tui/internal/types"
 	"strings"
 	"testing"
-	"skillsync/tui/internal/types"
 )
 
 func TestSync_CallbackInvoked(t *testing.T) {
@@ -165,7 +165,7 @@ func TestUpdateAgentsMarkdown_FailsWhenOnlyOneRequiredHeaderExists(t *testing.T)
 
 func TestSync_UpdatesMarkdownTables(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+
 	agentsContent := `# Root Agents
 ## Available Skills
 
@@ -182,22 +182,22 @@ Some other text
 `
 	os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644)
 	os.WriteFile(filepath.Join(tmpDir, "OPENCODE.md"), []byte(agentsContent), 0644)
-	
+
 	skills := []types.Skill{
 		{
 			Name: "new-skill",
 			Metadata: types.Metadata{
-				Scope: "root",
+				Scope:      "root",
 				AutoInvoke: []string{"new-skill"},
 			},
 		},
 	}
-	
+
 	err := UpdateAgentsMarkdown(tmpDir, skills, "", false)
 	if err != nil {
 		t.Fatalf("UpdateAgentsMarkdown failed: %v", err)
 	}
-	
+
 	newAgentsContent, _ := os.ReadFile(filepath.Join(tmpDir, "AGENTS.md"))
 	if !strings.Contains(string(newAgentsContent), "| new-skill                           | `new-skill` |") {
 		t.Errorf("AGENTS.md did not contain new-skill action")
@@ -219,7 +219,7 @@ Some other text
 
 func TestUpdateAgentsMarkdown_FiltersByScope(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+
 	agentsContent := `# Root Agents
 ## Available Skills
 
@@ -232,37 +232,37 @@ func TestUpdateAgentsMarkdown_FiltersByScope(t *testing.T) {
 | --- | --- |
 `
 	os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644)
-	
+
 	skills := []types.Skill{
 		{
 			Name: "root-skill",
 			Metadata: types.Metadata{
-				Scope: "root",
+				Scope:      "root",
 				AutoInvoke: []string{"root-skill"},
 			},
 		},
 		{
 			Name: "ui-skill",
 			Metadata: types.Metadata{
-				Scope: "ui",
+				Scope:      "ui",
 				AutoInvoke: []string{"ui-skill"},
 			},
 		},
 	}
-	
+
 	// Test with scope "ui"
 	err := UpdateAgentsMarkdown(tmpDir, skills, "ui", false)
 	if err != nil {
 		t.Fatalf("UpdateAgentsMarkdown failed: %v", err)
 	}
-	
+
 	newAgentsContent, _ := os.ReadFile(filepath.Join(tmpDir, "AGENTS.md"))
 	parts := strings.Split(string(newAgentsContent), "### Auto-invoke Skills")
 	if len(parts) < 2 {
 		t.Fatalf("could not find Auto-invoke Skills section in AGENTS.md")
 	}
 	autoInvokeSection := parts[1]
-	
+
 	if !strings.Contains(autoInvokeSection, "ui-skill") {
 		t.Errorf("Auto-invoke section did not contain ui-skill")
 	}
@@ -273,7 +273,7 @@ func TestUpdateAgentsMarkdown_FiltersByScope(t *testing.T) {
 
 func TestUpdateAgentsMarkdown_MultiActionAndSorting(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+
 	agentsContent := `# Root Agents
 ## Available Skills
 
@@ -286,32 +286,32 @@ func TestUpdateAgentsMarkdown_MultiActionAndSorting(t *testing.T) {
 | --- | --- |
 `
 	os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644)
-	
+
 	skills := []types.Skill{
 		{
 			Name: "B-skill",
 			Metadata: types.Metadata{
-				Scope: "root",
+				Scope:      "root",
 				AutoInvoke: []string{"zeta"},
 			},
 		},
 		{
 			Name: "A-skill",
 			Metadata: types.Metadata{
-				Scope: "root",
+				Scope:      "root",
 				AutoInvoke: []string{"zeta", "Beta", "alpha"},
 			},
 		},
 	}
-	
+
 	err := UpdateAgentsMarkdown(tmpDir, skills, "", false)
 	if err != nil {
 		t.Fatalf("UpdateAgentsMarkdown failed: %v", err)
 	}
-	
+
 	newAgentsContent, _ := os.ReadFile(filepath.Join(tmpDir, "AGENTS.md"))
 	lines := strings.Split(string(newAgentsContent), "\n")
-	
+
 	var tableRows []string
 	inTable := false
 	for _, line := range lines {
@@ -327,18 +327,18 @@ func TestUpdateAgentsMarkdown_MultiActionAndSorting(t *testing.T) {
 			}
 		}
 	}
-	
+
 	expectedRows := []string{
 		"| alpha                               | `A-skill` |",
 		"| Beta                                | `A-skill` |",
 		"| zeta                                | `A-skill` |",
 		"| zeta                                | `B-skill` |",
 	}
-	
+
 	if len(tableRows) != len(expectedRows) {
 		t.Fatalf("Expected %d rows, got %d. Table lines:\n%s", len(expectedRows), len(tableRows), strings.Join(tableRows, "\n"))
 	}
-	
+
 	for i, exp := range expectedRows {
 		if tableRows[i] != exp {
 			t.Errorf("At row %d: expected %q, got %q", i, exp, tableRows[i])
@@ -346,9 +346,247 @@ func TestUpdateAgentsMarkdown_MultiActionAndSorting(t *testing.T) {
 	}
 }
 
-func TestSync_CleanupLegacyScripts(t *testing.T) {
+func TestUpdateAgentsMarkdown_SanitizesMarkdownCellsAndScopeTokens(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+	agentsContent := `# Root Agents
+## Available Skills
+
+| Skill | Description | Location |
+| --- | --- | --- |
+
+### Auto-invoke Skills
+
+| Action | Skill |
+| --- | --- |
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	skills := []types.Skill{
+		{
+			Name: "safe-skill",
+			Path: filepath.Join(tmpDir, ".agents", "skills", "safe-skill", "SKILL.md"),
+			Metadata: types.Metadata{
+				Description: "first line\nsecond | line",
+				Scope:       "root, ui",
+				AutoInvoke:  []string{"safe action"},
+			},
+		},
+		{
+			Name: "false-positive-scope",
+			Path: filepath.Join(tmpDir, ".agents", "skills", "false-positive-scope", "SKILL.md"),
+			Metadata: types.Metadata{
+				Description: "should not match root by substring",
+				Scope:       "not-root",
+				AutoInvoke:  []string{"wrong action"},
+			},
+		},
+	}
+
+	if err := UpdateAgentsMarkdown(tmpDir, skills, "root", false); err != nil {
+		t.Fatalf("UpdateAgentsMarkdown failed: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(tmpDir, "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(raw)
+
+	if !strings.Contains(content, `first line second \| line`) {
+		t.Fatalf("expected multiline and pipe description to be sanitized, got:\n%s", content)
+	}
+	if strings.Contains(content, "second | line") {
+		t.Fatalf("description pipe was not escaped, got:\n%s", content)
+	}
+	if strings.Contains(content, "wrong action") {
+		t.Fatalf("scope matched by substring; expected exact scope token matching, got:\n%s", content)
+	}
+}
+
+func TestUpdateAgentsMarkdown_SanitizesAutoInvokeCells(t *testing.T) {
+	tmpDir := t.TempDir()
+	agentsContent := `# Root Agents
+## Available Skills
+
+| Skill | Description | Location |
+| --- | --- | --- |
+
+### Auto-invoke Skills
+
+| Action | Skill |
+| --- | --- |
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	skills := []types.Skill{
+		{
+			Name: "weird|skill\nname",
+			Path: filepath.Join(tmpDir, ".agents", "skills", "weird-skill", "SKILL.md"),
+			Metadata: types.Metadata{
+				Scope:      "root",
+				AutoInvoke: []string{"create\ntable", "edit | docs"},
+			},
+		},
+	}
+
+	if err := UpdateAgentsMarkdown(tmpDir, skills, "root", false); err != nil {
+		t.Fatalf("UpdateAgentsMarkdown failed: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(tmpDir, "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(raw)
+
+	if strings.Contains(content, "create\ntable") {
+		t.Fatalf("auto-invoke action with newline leaked into AGENTS.md, got:\n%s", content)
+	}
+	if strings.Contains(content, "edit | docs") {
+		t.Fatalf("auto-invoke action containing '|' was not escaped, got:\n%s", content)
+	}
+	if !strings.Contains(content, `edit \| docs`) {
+		t.Fatalf("expected pipe-escaped auto-invoke action, got:\n%s", content)
+	}
+	if !strings.Contains(content, `create table`) {
+		t.Fatalf("expected newline-collapsed auto-invoke action, got:\n%s", content)
+	}
+	if !strings.Contains(content, `weird\|skill name`) {
+		t.Fatalf("skill name with '|' and newline was not sanitized, got:\n%s", content)
+	}
+
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "|") {
+			continue
+		}
+		if strings.Count(trimmed, "|") < 2 {
+			t.Fatalf("malformed markdown table row (fewer than 3 pipes), got: %q\nfull content:\n%s", trimmed, content)
+		}
+	}
+}
+
+func TestUpdateAgentsMarkdown_SanitizesLocationCell(t *testing.T) {
+	tmpDir := t.TempDir()
+	agentsContent := `# Root Agents
+## Available Skills
+
+| Skill | Description | Location |
+| --- | --- | --- |
+
+### Auto-invoke Skills
+
+| Action | Skill |
+| --- | --- |
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "AGENTS.md"), []byte(agentsContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build synthetic paths that exercise both the link display text
+	// (filepath.Base) and the link URL (filepath.ToSlash(rel)). The paths
+	// do not need to exist on disk because UpdateAgentsMarkdown only
+	// inspects them as strings via filepath.Rel / filepath.Base.
+	weirdBase := "weird|name.md"
+	weirdRelSegment := "weird|dir"
+	weirdNewlineBase := "multi\nline.md"
+	weirdNewlineRel := "multi\nline"
+
+	skills := []types.Skill{
+		{
+			Name: "pipe-base",
+			Path: filepath.Join(tmpDir, ".agents", "skills", "normal", weirdBase),
+			Metadata: types.Metadata{
+				Scope: "root",
+			},
+		},
+		{
+			Name: "pipe-rel",
+			Path: filepath.Join(tmpDir, ".agents", "skills", weirdRelSegment, "SKILL.md"),
+			Metadata: types.Metadata{
+				Scope: "root",
+			},
+		},
+		{
+			Name: "newline-base",
+			Path: filepath.Join(tmpDir, ".agents", "skills", "normal", weirdNewlineBase),
+			Metadata: types.Metadata{
+				Scope: "root",
+			},
+		},
+		{
+			Name: "newline-rel",
+			Path: filepath.Join(tmpDir, ".agents", "skills", weirdNewlineRel, "SKILL.md"),
+			Metadata: types.Metadata{
+				Scope: "root",
+			},
+		},
+	}
+
+	if err := UpdateAgentsMarkdown(tmpDir, skills, "root", false); err != nil {
+		t.Fatalf("UpdateAgentsMarkdown failed: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(tmpDir, "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(raw)
+
+	// The pipe in the base filename and the rel segment must be escaped
+	// so it does not break the table layout.
+	if strings.Contains(content, weirdBase) {
+		t.Fatalf("unescaped pipe in Location cell base: %q leaked into AGENTS.md, got:\n%s", weirdBase, content)
+	}
+	if strings.Contains(content, filepath.Join(".agents", "skills", weirdRelSegment, "SKILL.md")) {
+		t.Fatalf("unescaped pipe in Location cell rel leaked into AGENTS.md, got:\n%s", content)
+	}
+	if !strings.Contains(content, `weird\|name.md`) {
+		t.Fatalf("expected pipe-escaped base name, got:\n%s", content)
+	}
+	if !strings.Contains(content, `weird\|dir`) {
+		t.Fatalf("expected pipe-escaped rel segment, got:\n%s", content)
+	}
+
+	// Multiline base/rel must be collapsed to a single space, otherwise
+	// the table row would split across lines and break the markdown.
+	if strings.Contains(content, "multi\nline") {
+		t.Fatalf("multiline content leaked into AGENTS.md Location cell, got:\n%s", content)
+	}
+	if !strings.Contains(content, "multi line") {
+		t.Fatalf("expected newline-collapsed Location cell, got:\n%s", content)
+	}
+
+	// Every generated Available Skills row must remain a single, well-formed
+	// markdown table row (at least the three cell delimiters).
+	lines := strings.Split(content, "\n")
+	inTable := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "|") {
+			inTable = false
+			continue
+		}
+		if strings.Contains(trimmed, "| --- | --- | --- |") {
+			inTable = true
+			continue
+		}
+		if !inTable {
+			continue
+		}
+		if strings.Count(trimmed, "|") < 4 {
+			t.Fatalf("malformed markdown table row (fewer than 5 pipes) for Location cell sanitization, got: %q\nfull content:\n%s", trimmed, content)
+		}
+	}
+}
+
+func TestSync_CleanupLegacyHarnessArtifacts(t *testing.T) {
+	tmpDir := t.TempDir()
+
 	// Create mock skills directories with assets
 	assetsDir1 := filepath.Join(tmpDir, ".agents", "skills", "skill-a", "assets")
 	assetsDir2 := filepath.Join(tmpDir, ".agents", "skills", "skill-b", "assets")
@@ -443,5 +681,3 @@ func TestSync_CleanupLegacyScripts(t *testing.T) {
 		t.Errorf("run report did not list all legacy scripts: sh1=%v, sh2=%v, ps1=%v", foundSh1, foundSh2, foundPs1)
 	}
 }
-
-

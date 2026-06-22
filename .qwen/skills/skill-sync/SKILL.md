@@ -2,23 +2,23 @@
 name: skill-sync
 description: >
   Syncs skill metadata to AGENTS.md Auto-invoke sections.
-  Trigger: When updating skill metadata (metadata.scope/metadata.auto_invoke), regenerating Auto-invoke tables, or running ./.agent/skills/skill-sync/assets/sync.sh (including --dry-run/--scope).
+  Trigger: When updating skill metadata (metadata.scope/metadata.auto_invoke), regenerating Auto-invoke tables, or running synck sync.
 metadata:
   author: a.sierra
   version: '1.0'
   scope: [root]
   auto_invoke:
     - 'After creating/modifying a skill'
-    - 'Regenerate AGENTS.md Auto-invoke tables (sync.sh)'
+    - 'Regenerate AGENTS.md Auto-invoke tables (synck sync)'
     - 'Troubleshoot why a skill is missing from AGENTS.md auto-invoke'
-allowed-tools: Read, Edit, Write, Glob, Grep, Bash
+allowed-tools: Read, Edit, Write, Glob, Grep
 ---
 
 # Skill sync
 
 ## Purpose
 
-Keeps AGENTS.md Auto-invoke sections in sync with skill metadata. When you create or modify a skill, run the sync script to automatically update all affected AGENTS.md files.
+Keeps AGENTS.md Auto-invoke sections in sync with skill metadata. When you create or modify a skill, run the Go sync harness (`synck sync`) to automatically update all affected AGENTS.md files.
 
 ## Required Skill Metadata
 
@@ -38,7 +38,7 @@ metadata:
   # auto_invoke:
   #   - "Creating/modifying components"
   #   - "Refactoring component folder placement"
-`	ext
+```
 
 ### Scope Values
 
@@ -58,12 +58,12 @@ Skills can have multiple scopes: `scope: [api, common]`. All scopes currently up
 ### After Creating/Modifying a Skill
 
 ```bash
-./.agent/skills/skill-sync/assets/sync.sh
-`	ext
+synck sync
+```
 
 ### What It Does
 
-1. Reads all `.agent/skills/*/SKILL.md` files
+1. Reads all `.agents/skills/*/SKILL.md` files
 2. Extracts `metadata.scope` and `metadata.auto_invoke`
 3. Generates Auto-invoke tables for each AGENTS.md
 4. Updates the `### Auto-invoke Skills` section in each file
@@ -75,14 +75,14 @@ Skills can have multiple scopes: `scope: [api, common]`. All scopes currently up
 Given this skill metadata:
 
 ```yaml
-# .agent/skills/myapp-ui/SKILL.md
+# .agents/skills/myapp-ui/SKILL.md
 metadata:
   version: '1.0'
   scope: [ui]
   auto_invoke: 'Creating/modifying React components'
-`	ext
+```
 
-The sync script generates in `ui/AGENTS.md`:
+The sync harness generates in `ui/AGENTS.md`:
 
 ```markdown
 ### Auto-invoke Skills
@@ -92,7 +92,7 @@ When performing these actions, ALWAYS invoke the corresponding skill FIRST:
 | Action                              | Skill      |
 | ----------------------------------- | ---------- |
 | Creating/modifying React components | `myapp-ui` |
-`	ext
+```
 
 ---
 
@@ -100,14 +100,14 @@ When performing these actions, ALWAYS invoke the corresponding skill FIRST:
 
 ```bash
 # Sync all AGENTS.md files
-./.agent/skills/skill-sync/assets/sync.sh
+synck sync
 
 # Dry run (show what would change)
-./.agent/skills/skill-sync/assets/sync.sh --dry-run
+synck sync --dry-run
 
 # Sync specific scope only
-./.agent/skills/skill-sync/assets/sync.sh --scope ui
-`	ext
+synck sync --scope ui
+```
 
 ---
 
@@ -115,5 +115,11 @@ When performing these actions, ALWAYS invoke the corresponding skill FIRST:
 
 - [ ] Added `metadata.scope` to new/modified skill
 - [ ] Added `metadata.auto_invoke` with action description
-- [ ] Ran `./.agent/skills/skill-sync/assets/sync.sh`
+- [ ] Ran `synck sync`
 - [ ] Verified AGENTS.md files updated correctly
+
+---
+
+## Canonical Sync Path
+
+The canonical sync path is the Go sync harness invoked as `synck sync`. Legacy shell and PowerShell sync scripts (e.g. `sync.sh`, `sync_test.sh`, `sync_test.ps1`) are deprecated artifacts and are **not** the source of truth. The Go harness regenerates the AGENTS.md tables and removes any leftover legacy harness artifacts under `.agents/skills/*/assets/`.

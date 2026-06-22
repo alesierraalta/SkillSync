@@ -18,7 +18,7 @@ allowed-tools: Read, Edit, Write, Glob, Grep
 
 ## Purpose
 
-Keeps AGENTS.md Auto-invoke sections in sync with skill metadata. When you create or modify a skill, run the sync script to automatically update all affected AGENTS.md files.
+Keeps AGENTS.md Auto-invoke sections in sync with skill metadata. When you create or modify a skill, run the Go sync harness (`synck sync`) to automatically update all affected AGENTS.md files.
 
 ## Required Skill Metadata
 
@@ -63,7 +63,7 @@ synck sync
 
 ### What It Does
 
-1. Reads all `.agent/skills/*/SKILL.md` files
+1. Reads all `.agents/skills/*/SKILL.md` files
 2. Extracts `metadata.scope` and `metadata.auto_invoke`
 3. Generates Auto-invoke tables for each AGENTS.md
 4. Updates the `### Auto-invoke Skills` section in each file
@@ -75,14 +75,14 @@ synck sync
 Given this skill metadata:
 
 ```yaml
-# .agent/skills/myapp-ui/SKILL.md
+# .agents/skills/myapp-ui/SKILL.md
 metadata:
   version: '1.0'
   scope: [ui]
   auto_invoke: 'Creating/modifying React components'
 ```
 
-The sync script generates in `ui/AGENTS.md`:
+The sync harness generates in `ui/AGENTS.md`:
 
 ```markdown
 ### Auto-invoke Skills
@@ -117,3 +117,9 @@ synck sync --scope ui
 - [ ] Added `metadata.auto_invoke` with action description
 - [ ] Ran `synck sync`
 - [ ] Verified AGENTS.md files updated correctly
+
+---
+
+## Canonical Sync Path
+
+The canonical sync path is the Go sync harness invoked as `synck sync`. Legacy shell and PowerShell sync scripts (e.g. `sync.sh`, `sync_test.sh`, `sync_test.ps1`) are deprecated artifacts and are **not** the source of truth. The Go harness regenerates the AGENTS.md tables and removes any leftover legacy harness artifacts under `.agents/skills/*/assets/`.
