@@ -52,18 +52,9 @@ func RegenerateTools(root string, skills []types.Skill, dryRun bool) (*runner.Sy
 	// Replace tools array (always use non-nil slice)
 	oc["tools"] = tools
 
-	if dryRun {
-		fmt.Printf("[dry-run] would regenerate tools: %d entries\n", len(tools))
-		return report, nil
-	}
-
 	newData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return report, fmt.Errorf("marshal package.json: %w", err)
-	}
-
-	if err := os.WriteFile(pkgPath, newData, 0644); err != nil {
-		return report, err
 	}
 
 	after := string(newData)
@@ -75,13 +66,21 @@ func RegenerateTools(root string, skills []types.Skill, dryRun bool) (*runner.Sy
 		}
 		relPath, _ := filepath.Rel(root, pkgPath)
 		report.Changes = append(report.Changes, runner.FileChange{
-			Path:    relPath,
+			Path:    filepath.ToSlash(relPath),
 			Status:  status,
 			Before:  before,
 			After:   after,
 			Diff:    diffStr,
 			Summary: summary,
 		})
+	}
+
+	if dryRun {
+		return report, nil
+	}
+
+	if err := os.WriteFile(pkgPath, newData, 0644); err != nil {
+		return report, err
 	}
 
 	return report, nil

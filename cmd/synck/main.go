@@ -165,7 +165,11 @@ func handleSync(args []string) error {
 		DryRun:     *dryRun,
 		ProgressCb: progressCb,
 	}
-	opencodeReport, err := syncOpenCodeForRoot(root, opencodeOpts)
+	plannedAgentsContent := ""
+	if *dryRun {
+		plannedAgentsContent = plannedAgentsMD(engineReport)
+	}
+	opencodeReport, err := syncOpenCodeForRootWithAgentsContent(root, opencodeOpts, plannedAgentsContent)
 	if err != nil {
 		fmt.Printf("⚠️ OpenCode sync warning: %v\n", err)
 	}
@@ -231,6 +235,10 @@ func runSyncOpenCode(root string, opts opencode.Options, nonFatal bool) error {
 
 // syncOpenCodeForRoot performs the full OpenCode sync for a given root.
 func syncOpenCodeForRoot(root string, opts opencode.Options) (*runner.SyncReport, error) {
+	return syncOpenCodeForRootWithAgentsContent(root, opts, "")
+}
+
+func syncOpenCodeForRootWithAgentsContent(root string, opts opencode.Options, agentsMDContent string) (*runner.SyncReport, error) {
 	report := &runner.SyncReport{}
 
 	// Stage 3: Mirror skills
@@ -247,7 +255,12 @@ func syncOpenCodeForRoot(root string, opts opencode.Options) (*runner.SyncReport
 	if opts.ProgressCb != nil {
 		opts.ProgressCb("Parsing mirrored skills", 4, 8)
 	}
-	skills, err := parseMirroredSkills(root)
+	var skills []types.Skill
+	if opts.DryRun {
+		skills, err = syncengine.DiscoverSkills(root)
+	} else {
+		skills, err = parseMirroredSkills(root)
+	}
 	if err != nil {
 		return report, fmt.Errorf("parse skills: %w", err)
 	}
@@ -281,13 +294,16 @@ func syncOpenCodeForRoot(root string, opts opencode.Options) (*runner.SyncReport
 	if opts.ProgressCb != nil {
 		opts.ProgressCb("Copying AGENTS.md", 7, 8)
 	}
-	if !opts.DryRun {
-		copyReport, err := opencode.CopyAgentsMD(root)
-		if err != nil {
-			return report, fmt.Errorf("copy agents: %w", err)
-		}
-		report.Changes = append(report.Changes, copyReport.Changes...)
+	var copyReport *runner.SyncReport
+	if agentsMDContent != "" {
+		copyReport, err = opencode.CopyAgentsMDContent(root, agentsMDContent, opts.DryRun)
+	} else {
+		copyReport, err = opencode.CopyAgentsMD(root, opts.DryRun)
 	}
+	if err != nil {
+		return report, fmt.Errorf("copy agents: %w", err)
+	}
+	report.Changes = append(report.Changes, copyReport.Changes...)
 
 	// Stage 8: Regenerate commands
 	if opts.ProgressCb != nil {
@@ -300,6 +316,18 @@ func syncOpenCodeForRoot(root string, opts opencode.Options) (*runner.SyncReport
 	report.Changes = append(report.Changes, cmdReport.Changes...)
 
 	return report, nil
+}
+
+func plannedAgentsMD(report *runner.SyncReport) string {
+	if report == nil {
+		return ""
+	}
+	for _, change := range report.Changes {
+		if change.Path == "AGENTS.md" && change.After != "" {
+			return change.After
+		}
+	}
+	return ""
 }
 
 // parseMirroredSkills parses all mirrored skills from .opencode/skills/.

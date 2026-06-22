@@ -111,6 +111,57 @@ func TestSync_ReportContainsChange(t *testing.T) {
 	}
 }
 
+func TestSync_DryRunReportsAgentsMarkdownWithoutWriting(t *testing.T) {
+	tmpDir := t.TempDir()
+	agentsPath := filepath.Join(tmpDir, "AGENTS.md")
+	agentsContent := `# Root Agents
+## Available Skills
+
+| Skill | Description | Location |
+| --- | --- | --- |
+
+### Auto-invoke Skills
+
+| Action | Skill |
+| --- | --- |
+| Old Action | old-skill |
+`
+	if err := os.WriteFile(agentsPath, []byte(agentsContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	skillDir := filepath.Join(tmpDir, ".agents", "skills", "new-skill")
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: new-skill\ndescription: New skill\nscope: root\nauto_invoke:\n  - New Action\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := Sync(tmpDir, SyncOptions{DryRun: true})
+	if err != nil {
+		t.Fatalf("Sync dry-run failed: %v", err)
+	}
+
+	newContent, err := os.ReadFile(agentsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(newContent) != agentsContent {
+		t.Fatal("dry-run should not write AGENTS.md")
+	}
+	if len(report.Changes) != 1 {
+		t.Fatalf("expected 1 dry-run change, got %d", len(report.Changes))
+	}
+	change := report.Changes[0]
+	if change.Path != "AGENTS.md" || change.Status != "modified" {
+		t.Fatalf("expected AGENTS.md modified change, got %#v", change)
+	}
+	if change.Diff == "" || !strings.Contains(change.After, "new-skill") {
+		t.Fatalf("expected in-memory AGENTS.md diff containing new-skill, got %#v", change)
+	}
+}
+
 func TestSync_ReportCreatedStatus(t *testing.T) {
 	tmpDir := t.TempDir()
 	// No AGENTS.md initially

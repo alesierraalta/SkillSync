@@ -44,15 +44,11 @@ func Sync(root string, opts SyncOptions) (*runner.SyncReport, error) {
 		before = string(content)
 	}
 
-	if err := UpdateAgentsMarkdown(root, skills, opts.Scope, opts.DryRun); err != nil {
+	after, updated, err := renderAgentsMarkdown(root, skills, opts.Scope)
+	if err != nil {
 		return report, fmt.Errorf("update AGENTS.md: %w", err)
 	}
-
-	if !opts.DryRun {
-		after := ""
-		if content, err := os.ReadFile(agentsPath); err == nil {
-			after = string(content)
-		}
+	if updated {
 		if before != after {
 			diffStr, summary := diff.UnifiedDiff(before, after, 50)
 			status := "modified"
@@ -67,6 +63,11 @@ func Sync(root string, opts SyncOptions) (*runner.SyncReport, error) {
 				Diff:    diffStr,
 				Summary: summary,
 			})
+		}
+		if !opts.DryRun {
+			if err := os.WriteFile(agentsPath, []byte(after), 0644); err != nil {
+				return report, fmt.Errorf("write AGENTS.md: %w", err)
+			}
 		}
 	}
 
@@ -153,15 +154,25 @@ func sanitizeMarkdownCell(value string) string {
 }
 
 func UpdateAgentsMarkdown(root string, skills []types.Skill, scope string, dryRun bool) error {
+	content, updated, err := renderAgentsMarkdown(root, skills, scope)
+	if err != nil || !updated || dryRun {
+		return err
+	}
+
+	agentsPath := filepath.Join(root, "AGENTS.md")
+	return os.WriteFile(agentsPath, []byte(content), 0644)
+}
+
+func renderAgentsMarkdown(root string, skills []types.Skill, scope string) (string, bool, error) {
 	agentsPath := filepath.Join(root, "AGENTS.md")
 
 	if _, err := os.Stat(agentsPath); os.IsNotExist(err) {
-		return nil
+		return "", false, nil
 	}
 
 	content, err := os.ReadFile(agentsPath)
 	if err != nil {
-		return err
+		return "", false, err
 	}
 
 	lines := strings.Split(string(content), "\n")
@@ -176,7 +187,7 @@ func UpdateAgentsMarkdown(root string, skills []types.Skill, scope string, dryRu
 		}
 	}
 	if !hasAvailable || !hasAutoInvoke {
-		return fmt.Errorf("required headers missing in AGENTS.md: need '## Available Skills' and '### Auto-invoke Skills'")
+		return "", false, fmt.Errorf("required headers missing in AGENTS.md: need '## Available Skills' and '### Auto-invoke Skills'")
 	}
 
 	var out []string
@@ -275,11 +286,11 @@ func UpdateAgentsMarkdown(root string, skills []types.Skill, scope string, dryRu
 		out = append(out, line)
 	}
 
-	if sectionReplaced && !dryRun {
-		return os.WriteFile(agentsPath, []byte(strings.Join(out, "\n")), 0644)
+	if !sectionReplaced {
+		return string(content), false, nil
 	}
 
-	return nil
+	return strings.Join(out, "\n"), true, nil
 }
 
 func cleanupLegacyHarnessArtifacts(root string, dryRun bool) ([]runner.FileChange, error) {
