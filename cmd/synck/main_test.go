@@ -396,8 +396,8 @@ func TestMain_AutoChain(t *testing.T) {
 	// Create AGENTS.md so copyAgentsMD works
 	_ = os.WriteFile("AGENTS.md", []byte("# Agent Skills\n\n## Available Skills\n\n| Skill | Description | Location |\n| ----- | ----------- | -------- |\n\n### Auto-invoke Skills\n\nWhen performing these actions, ALWAYS invoke the corresponding skill FIRST:\n\n| Action                              | Skill      |\n| ----------------------------------- | ---------- |\n"), 0644)
 
-	// Create the sync script at the correct path (.agents/skills/skill-sync/assets/sync.sh)
-	// This is where runner.DefaultSyncPath points to
+	// Create the legacy sync script path for compatibility coverage.
+	// This is where runner.LegacySyncScriptPath points to.
 	_ = os.MkdirAll(".agents/skills/skill-sync/assets", 0755)
 	syncScript := `#!/bin/bash
 echo "sync done"
