@@ -46,10 +46,16 @@ func (m InstallerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "up", "k":
+			if m.Screen == ScreenLicenseDisclosure {
+				return m, nil
+			}
 			if m.Cursor > 0 {
 				m.Cursor--
 			}
 		case "down", "j":
+			if m.Screen == ScreenLicenseDisclosure {
+				return m, nil
+			}
 			if m.Cursor < 10+len(m.AllStored) {
 				m.Cursor++
 			}
@@ -57,16 +63,6 @@ func (m InstallerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.Mode = !m.Mode
 		case " ", "space", "enter":
 			if m.Screen == ScreenLicenseDisclosure {
-				if msg.String() == "y" || msg.String() == "Y" {
-					return m, func() tea.Msg {
-						return syncRequestMsg{
-							Installer: m,
-						}
-					}
-				} else if msg.String() == "n" || msg.String() == "N" || msg.String() == "esc" {
-					m.Screen = ScreenInstaller
-					return m, nil
-				}
 				return m, nil
 			}
 
@@ -79,12 +75,18 @@ func (m InstallerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.Autoskills = !m.Autoskills
 			} else if m.Cursor >= 9 && m.Cursor < 9+storageOffset {
 				idx := m.Cursor - 9
-				if idx < len(m.StoredSkills) {
-					m.StoredSkills[idx] = !m.StoredSkills[idx]
+				if m.StoredSkills == nil {
+					m.StoredSkills = make([]bool, len(m.AllStored))
 				}
+				if len(m.StoredSkills) <= idx {
+					newStored := make([]bool, idx+1)
+					copy(newStored, m.StoredSkills)
+					m.StoredSkills = newStored
+				}
+				m.StoredSkills[idx] = !m.StoredSkills[idx]
 			} else if m.Cursor == 9+storageOffset {
 				m.Global = !m.Global
-			} else if m.Cursor == 10+storageOffset && msg.String() == "enter" {
+			} else if m.Cursor == 10+storageOffset {
 				if m.Autoskills {
 					m.Screen = ScreenLicenseDisclosure
 					return m, nil
@@ -98,6 +100,7 @@ func (m InstallerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "y", "Y", "n", "N", "esc":
 			if m.Screen == ScreenLicenseDisclosure {
 				if msg.String() == "y" || msg.String() == "Y" {
+					m.Screen = ScreenInstaller
 					return m, func() tea.Msg {
 						return syncRequestMsg{
 							Installer: m,
@@ -116,6 +119,13 @@ type syncRequestMsg struct {
 	Installer InstallerModel
 }
 
+func (m InstallerModel) getCardStyle() lipgloss.Style {
+	if m.Height < 24 {
+		return cardStyle.Border(lipgloss.NormalBorder()).MarginBottom(0)
+	}
+	return cardStyle.Border(lipgloss.RoundedBorder()).MarginBottom(1)
+}
+
 func (m InstallerModel) View() string {
 	if m.Screen == ScreenLicenseDisclosure {
 		return m.LicenseDisclosureView()
@@ -123,14 +133,6 @@ func (m InstallerModel) View() string {
 
 	listWidth := int(float64(m.Width) * 0.5)
 	previewWidth := m.Width - listWidth
-
-	// Height fallback
-	var localCardStyle = cardStyle
-	if m.Height < 24 {
-		localCardStyle = localCardStyle.Border(lipgloss.NormalBorder()).MarginBottom(0)
-	} else {
-		localCardStyle = localCardStyle.Border(lipgloss.RoundedBorder()).MarginBottom(1)
-	}
 
 	left := lipgloss.NewStyle().Width(listWidth).PaddingRight(2).Render(m.OptionsView())
 	right := viewportStyle.Width(previewWidth).PaddingLeft(2).Render(m.PreviewView())
@@ -149,7 +151,7 @@ func (m InstallerModel) LicenseDisclosureView() string {
 		"Do you accept and want to proceed? (y/n)"
 
 	return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center,
-		cardStyle.Width(width).Render(
+		m.getCardStyle().Width(width).Render(
 			lipgloss.JoinVertical(lipgloss.Center, title, content),
 		),
 	)
@@ -157,7 +159,7 @@ func (m InstallerModel) LicenseDisclosureView() string {
 
 func (m InstallerModel) renderCard(title, content string, width int) string {
 	styledTitle := cardTitleStyle.Render(title)
-	return cardStyle.Width(width).Render(
+	return m.getCardStyle().Width(width).Render(
 		lipgloss.JoinVertical(lipgloss.Left,
 			styledTitle,
 			content,
@@ -263,7 +265,7 @@ func (m InstallerModel) OptionsView() string {
 	footer += fmt.Sprintf("%s%s Add shell aliases to profile\n", cursorGlobal, checkGlobal)
 
 	cursorAction := "  "
-	if m.Cursor == 9+storageOffset {
+	if m.Cursor == 10+storageOffset {
 		cursorAction = "> "
 	}
 	footer += fmt.Sprintf("\n%s[ Execute Install ]\n", cursorAction)
@@ -305,13 +307,13 @@ func (m InstallerModel) PreviewView() string {
 	// Skills
 	content += lipgloss.NewStyle().Bold(true).Render("SKILLS TO COPY/LINK:") + "\n"
 	if m.Skills[0] {
-		content += "  + skill-creator -> .agent/skills/skill-creator\n"
+		content += "  + skill-creator -> .agents/skills/skill-creator\n"
 	}
 	if m.Skills[1] {
-		content += "  + skill-sync    -> .agent/skills/skill-sync\n"
+		content += "  + skill-sync    -> .agents/skills/skill-sync\n"
 	}
 	if m.Skills[2] {
-		content += "  + find-skills   -> .agent/skills/find-skills\n"
+		content += "  + find-skills   -> .agents/skills/find-skills\n"
 	}
 	content += "\n"
 

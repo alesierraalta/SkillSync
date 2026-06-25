@@ -3,9 +3,9 @@ package opencode
 import (
 	"os"
 	"path/filepath"
+	"skillsync/tui/internal/types"
 	"strings"
 	"testing"
-	"skillsync/tui/internal/types"
 )
 
 func TestRegenerateCommands_CreatesBaseFiles(t *testing.T) {
@@ -127,7 +127,7 @@ func TestRegenerateCommands_Idempotent(t *testing.T) {
 	os.MkdirAll(cmdDir, 0755)
 
 	skills := []types.Skill{{Name: "test", Metadata: types.Metadata{AutoInvoke: []string{"test"}}}}
-	
+
 	// First run
 	_, err := RegenerateCommands(tmpDir, skills, false)
 	if err != nil {
@@ -136,7 +136,7 @@ func TestRegenerateCommands_Idempotent(t *testing.T) {
 
 	path := filepath.Join(cmdDir, "test.md")
 	stat1, _ := os.Stat(path)
-	
+
 	// Second run
 	_, err = RegenerateCommands(tmpDir, skills, false)
 	if err != nil {

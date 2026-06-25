@@ -12,7 +12,7 @@ func TestRegisterProject(t *testing.T) {
 	s := NewService(root)
 
 	projectPath := t.TempDir()
-	
+
 	t.Run("creates registry if missing", func(t *testing.T) {
 		err := s.RegisterProject(projectPath)
 		if err != nil {
@@ -82,7 +82,6 @@ func TestRegisterProject(t *testing.T) {
 		}
 	})
 }
-
 
 func TestRegisterProjectInitial(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -172,7 +171,6 @@ func TestRegisterProjectInitial(t *testing.T) {
 	})
 }
 
-
 func TestGetProjectsFiltering(t *testing.T) {
 	tmpDir := t.TempDir()
 	root := filepath.Join(tmpDir, "storage")
@@ -208,7 +206,6 @@ func TestGetProjectsFiltering(t *testing.T) {
 		}
 	})
 }
-
 
 func TestPruneRegistry(t *testing.T) {
 	tmpDir := t.TempDir()

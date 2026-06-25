@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 	"skillsync/tui/internal/ui"
-
-
 )
 
 func main() {

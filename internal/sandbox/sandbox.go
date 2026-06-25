@@ -172,6 +172,7 @@ func (s *Sandbox) RunVirtualDiscovery() []string {
 	}
 	return virtuals
 }
+
 // PrintResults outputs the results of discovery and parsing to stdout.
 func (s *Sandbox) PrintResults(skills []*types.Skill) {
 	fmt.Printf("%-15s | %-20s | %-15s | %s\n", "Provider", "Name", "ID", "Description")

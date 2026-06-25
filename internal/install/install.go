@@ -40,7 +40,7 @@ func GlobalInstall() Result {
 	cmd := exec.Command("go", "install", "./cmd/synck")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
+
 	if err := cmd.Run(); err != nil {
 		return Result{Success: false, Message: "Failed to execute 'go install ./cmd/synck'", Error: err}
 	}

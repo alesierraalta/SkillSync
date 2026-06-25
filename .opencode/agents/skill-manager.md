@@ -33,7 +33,7 @@ This agent provides skill management commands derived from the current skill inv
  | `synck serena-mcp-tools` |
 | `skill-creator` | Creates new AI agent skills following the Agent Skills spec. Trigger: When user asks to create a new skill, add agent instructions, or document patterns for AI.
  | `synck skill-creator` |
-| `skill-sync` | Syncs skill metadata to AGENTS.md Auto-invoke sections. Trigger: When updating skill metadata (metadata.scope/metadata.auto_invoke), regenerating Auto-invoke tables, or running ./.agent/skills/skill-sync/assets/sync.sh (including --dry-run/--scope).
+| `skill-sync` | Syncs skill metadata to AGENTS.md Auto-invoke sections. Trigger: When updating skill metadata (metadata.scope/metadata.auto_invoke), regenerating Auto-invoke tables, or running synck sync.
  | `synck skill-sync` |
 | `smoke-test` | — | `synck smoke-test` |
 | `test-prompt-scope` | test prompt scope. Trigger: When the user asks for test prompt scope.
