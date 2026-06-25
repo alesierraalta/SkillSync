@@ -1,7 +1,8 @@
 ---
 name: sdd-init
 description: Initialize project SDD context, testing capabilities, and skill registry.
-model: gemini-acp/gemini-3.1-flash-lite-preview
+model: opencode/deepseek-v4-flash-free
+thinking: xhigh
 tools: read, grep, glob, write, bash
 inheritProjectContext: true
 ---

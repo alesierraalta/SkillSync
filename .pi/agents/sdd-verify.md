@@ -1,7 +1,8 @@
 ---
 name: sdd-verify
 description: Verify implementation against SDD specs, tasks, strict TDD evidence, and review workload boundaries.
-model: gemini-acp/gemini-3-flash-preview
+model: opencode-go/kimi-k2.7-code
+thinking: xhigh
 tools: read, grep, glob, bash, write, edit
 inheritProjectContext: true
 ---

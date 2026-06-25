@@ -1,7 +1,8 @@
 ---
 name: sdd-apply
 description: Implement SDD tasks with strict TDD evidence and review workload guard.
-model: gemini-acp/gemini-3-flash-preview
+model: opencode-go/minimax-m3
+thinking: xhigh
 tools: read, grep, glob, edit, write, bash
 inheritProjectContext: true
 ---

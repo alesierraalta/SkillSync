@@ -1,2 +1,7 @@
 # Local Pi runtime state
 .atl/
+.codegraph/
+.pi-lens/sessions/
+.pi-lens/cache/
+.pi-lens/turn-state.json
+.pi-lens/change-log.jsonl

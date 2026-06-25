@@ -1,7 +1,8 @@
 ---
 name: sdd-proposal
 description: Write an SDD proposal for an approved change idea.
-model: gemini-acp/gemini-3.1-pro-preview
+model: opencode-go/glm-5.2
+thinking: xhigh
 tools: read, grep, glob, write, edit
 inheritProjectContext: true
 ---

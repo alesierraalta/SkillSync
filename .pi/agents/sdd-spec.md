@@ -1,7 +1,8 @@
 ---
 name: sdd-spec
 description: Write SDD delta specs with requirements and scenarios.
-model: gemini-acp/gemini-3.1-pro-preview
+model: opencode-go/kimi-k2.7-code
+thinking: xhigh
 tools: read, grep, glob, write, edit
 inheritProjectContext: true
 ---
