@@ -4,19 +4,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"skillsync/tui/internal/diff"
 	"skillsync/tui/internal/discovery"
 	"skillsync/tui/internal/install"
 	"skillsync/tui/internal/opencode"
-	"skillsync/tui/internal/parser"
 	"skillsync/tui/internal/remove"
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/syncengine"
-	"skillsync/tui/internal/types"
 	"skillsync/tui/internal/ui"
 	"strings"
 )
@@ -251,18 +248,13 @@ func syncOpenCodeForRootWithAgentsContent(root string, opts opencode.Options, ag
 	}
 	report.Changes = append(report.Changes, syncReport.Changes...)
 
-	// Stage 4: Parse mirrored skills
+	// Stage 4: Discover skills from source
 	if opts.ProgressCb != nil {
-		opts.ProgressCb("Parsing mirrored skills", 4, 8)
+		opts.ProgressCb("Discovering skills", 4, 8)
 	}
-	var skills []types.Skill
-	if opts.DryRun {
-		skills, err = syncengine.DiscoverSkills(root)
-	} else {
-		skills, err = parseMirroredSkills(root)
-	}
+	skills, err := syncengine.DiscoverSkills(root)
 	if err != nil {
-		return report, fmt.Errorf("parse skills: %w", err)
+		return report, fmt.Errorf("discover skills: %w", err)
 	}
 
 	// Stage 5: Ensure package.json / Regenerate tools
@@ -330,41 +322,6 @@ func plannedAgentsMD(report *runner.SyncReport) string {
 	return ""
 }
 
-// parseMirroredSkills parses all mirrored skills from .opencode/skills/.
-func parseMirroredSkills(root string) ([]types.Skill, error) {
-	skillsPath := filepath.Join(root, ".opencode", "skills")
-	var skillPaths []string
-	err := filepath.WalkDir(skillsPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		info, err := os.Stat(path)
-		if err != nil {
-			return nil
-		}
-		if info.IsDir() {
-			skillFile := filepath.Join(path, "SKILL.md")
-			if _, err := os.Stat(skillFile); err == nil {
-				skillPaths = append(skillPaths, skillFile)
-				return filepath.SkipDir
-			}
-		}
-		return nil
-	})
-	if err != nil && !os.IsNotExist(err) {
-		return nil, err
-	}
-
-	var skills []types.Skill
-	for _, p := range skillPaths {
-		skill, err := parser.Parse(p)
-		if err != nil {
-			continue
-		}
-		skills = append(skills, *skill)
-	}
-	return skills, nil
-}
 
 func handleCreateSkill(args []string) error {
 	if len(args) == 0 {
