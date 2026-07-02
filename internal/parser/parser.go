@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -238,7 +239,9 @@ func Format(skill *types.Skill) (string, error) {
 func Save(path string, skill *types.Skill) error {
 	tmpPath := path + ".tmp"
 	defer func() {
-		_ = os.Remove(tmpPath)
+		if err := os.Remove(tmpPath); err != nil && !os.IsNotExist(err) {
+			slog.Warn("failed to remove tmp file", "path", tmpPath, "err", err)
+		}
 	}()
 
 	finalContent, err := Format(skill)
