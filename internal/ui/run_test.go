@@ -41,18 +41,6 @@ func TestRunProgramSeams(t *testing.T) {
 			wantPanic:      true,
 			wantErrContain: "recovered panic",
 		},
-		{
-			name: "panic+error join: both error and panic",
-			programFunc: func(m tea.Model) error {
-				// Simulate a scenario where the program returns an error
-				// and the defer panics (though unusual, join captures both).
-				return errors.New("bubbletea error")
-			},
-			wantErr:   true,
-			wantPanic: false,
-			// For this case, we'll test that the error message is wrapped correctly.
-			wantErrContain: "alas, there's been an error",
-		},
 	}
 
 	for _, tt := range tests {
@@ -88,6 +76,14 @@ func TestRunProgramSeams(t *testing.T) {
 		})
 	}
 }
+
+// NOTE: The errors.Join() call in Run() is defensive: it would capture both
+// an error from runProgram AND a panic that occurs during error wrapping.
+// However, the current control flow makes this unreachable under normal conditions:
+// errors are returned immediately (line 38 in run.go), and panics only trigger
+// the recover handler — a panic cannot occur during the return statement itself.
+// The join is kept as defensive programming to handle hypothetical future code
+// changes that might defer the error handling or cause panics after runProgram.
 
 // TestRunProgramErrorWrap verifies that the error wrapping via %w is observable.
 // This tests AUDIT-09b: the bubbletea error is wrapped, not replaced.
