@@ -1,9 +1,9 @@
 ---
 name: serena-mcp-tools
 description: >
-  Serena MCP para navegacion semantica, edicion por simbolos y refactors con
-  bajo coste de tokens. Trigger: usar Serena MCP, buscar declaraciones,
-  referencias, implementaciones, diagnosticos o editar codigo por simbolo.
+  Serena MCP for semantic navigation, symbol-based editing, and low-token-cost
+  refactors. Trigger: using Serena MCP, searching declarations, references,
+  implementations, diagnostics, or editing code by symbol.
 metadata:
   author: a.sierra
   version: "1.2"

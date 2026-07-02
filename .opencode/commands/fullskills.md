@@ -1,6 +1,6 @@
 ---
 managed_by: skillsync
-description: Complete skill workflow
+description: Full skill lifecycle flow (find -> create -> sync)
 ---
 
 /synck fullskills "$!1"
