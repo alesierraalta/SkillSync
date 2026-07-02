@@ -107,9 +107,9 @@ func RegenerateAgent(root string, skills []types.Skill, dryRun bool) (*runner.Sy
 }
 
 // CopyAgentsMD copies AGENTS.md to OPENCODE.md.
-func CopyAgentsMD(root string, dryRun ...bool) (*runner.SyncReport, error) {
+func CopyAgentsMD(root string, dryRun bool) (*runner.SyncReport, error) {
 	src := filepath.Join(root, "AGENTS.md")
-	dry := len(dryRun) > 0 && dryRun[0]
+	dry := dryRun
 
 	content, err := os.ReadFile(src)
 	if err != nil {

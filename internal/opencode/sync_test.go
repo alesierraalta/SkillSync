@@ -559,7 +559,7 @@ func TestCopyAgentsMD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := CopyAgentsMD(tmp)
+	_, err := CopyAgentsMD(tmp, false)
 	if err != nil {
 		t.Fatalf("CopyAgentsMD failed: %v", err)
 	}
@@ -608,7 +608,7 @@ func TestSyncOpencode_FullSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RegenerateAgent failed: %v", err)
 	}
-	_, err = CopyAgentsMD(tmp)
+	_, err = CopyAgentsMD(tmp, false)
 	if err != nil {
 		t.Fatalf("CopyAgentsMD failed: %v", err)
 	}
@@ -665,7 +665,7 @@ func TestSyncOpencode_Idempotent(t *testing.T) {
 	_, _ = SyncSkills(tmp, Options{})
 	RegenerateTools(tmp, skills, false)
 	_, _ = RegenerateAgent(tmp, skills, false)
-	_, _ = CopyAgentsMD(tmp)
+	_, _ = CopyAgentsMD(tmp, false)
 
 	fooDest := filepath.Join(tmp, ".opencode", "skills", "foo", "SKILL.md")
 	stat1, err := os.Stat(fooDest)
@@ -677,7 +677,7 @@ func TestSyncOpencode_Idempotent(t *testing.T) {
 	_, _ = SyncSkills(tmp, Options{})
 	RegenerateTools(tmp, skills, false)
 	_, _ = RegenerateAgent(tmp, skills, false)
-	_, _ = CopyAgentsMD(tmp)
+	_, _ = CopyAgentsMD(tmp, false)
 
 	stat2, err := os.Stat(fooDest)
 	if err != nil {
