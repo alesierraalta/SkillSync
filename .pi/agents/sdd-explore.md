@@ -1,7 +1,8 @@
 ---
 name: sdd-explore
 description: Explore an SDD change idea before proposal.
-model: gemini-acp/gemini-3-flash-preview
+model: opencode/deepseek-v4-flash-free
+thinking: xhigh
 tools: read, grep, glob, webfetch
 inheritProjectContext: true
 ---

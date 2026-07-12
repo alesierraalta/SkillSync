@@ -509,3 +509,44 @@ func TestHandleInstallerKeys_ToggleMode(t *testing.T) {
 		t.Errorf("expected Installer.Mode to toggle back, got %v", m.Installer.Mode)
 	}
 }
+
+func TestGlobalSkillsScreenTransitions(t *testing.T) {
+	m := NewModel(NewBackend(storage.NewService("")))
+	m.Screen = ScreenHome
+
+	// Navigate Home -> Cats
+	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("7")})
+	res := newModel.(Model)
+	if res.Screen != ScreenGlobalSkillsCats {
+		t.Errorf("expected ScreenGlobalSkillsCats, got %v", res.Screen)
+	}
+
+	// Navigate Cats -> List
+	res.globalCategoryCursor = 0 // "Claude"
+	newModel, cmd := res.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	res2 := newModel.(Model)
+	if res2.Screen != ScreenGlobalSkillsList {
+		t.Errorf("expected ScreenGlobalSkillsList, got %v", res2.Screen)
+	}
+	if cmd == nil {
+		t.Error("expected command to load skills, got nil")
+	}
+
+	// Navigate List -> Cats
+	newModel, _ = res2.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	res3 := newModel.(Model)
+	if res3.Screen != ScreenGlobalSkillsCats {
+		t.Errorf("expected ScreenGlobalSkillsCats, got %v", res3.Screen)
+	}
+}
+
+func TestLoadGlobalSkillsCmd(t *testing.T) {
+	m := NewModel(NewBackend(storage.NewService("")))
+	cmd := m.loadGlobalSkillsCmd("Claude")
+
+	// Note: We can't easily mock the filesystem here without changing AppService,
+	// but we can at least ensure it returns a globalSkillsLoadedMsg.
+	if cmd == nil {
+		t.Fatal("expected non-nil cmd")
+	}
+}

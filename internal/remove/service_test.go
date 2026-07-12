@@ -42,8 +42,8 @@ func setupSkillsLock(t *testing.T, root string, entries []string) {
 	skills := make(map[string]interface{})
 	for _, name := range entries {
 		skills[name] = map[string]interface{}{
-			"source":        "test",
-			"sourceType":    "github",
+			"source":       "test",
+			"sourceType":   "github",
 			"computedHash": "abc123",
 		}
 	}

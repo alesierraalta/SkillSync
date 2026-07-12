@@ -2,7 +2,10 @@ $ErrorActionPreference = "Continue" # Don't stop on assertion failure
 
 # Paths
 $ScriptDir = $PSScriptRoot
-$SyncScript = Join-Path $ScriptDir "sync.ps1"
+# sync.sh is the script actually shipped by the project; sync_test.sh exercises
+# it on Unix/Git-Bash. On Windows we run the same fixture from PowerShell by
+# invoking sync.sh through bash so the test reflects real script behavior.
+$SyncScript = Join-Path $ScriptDir "sync.sh"
 
 # Colors
 function Write-Pass { Write-Host "PASS" -ForegroundColor Green }
@@ -14,106 +17,173 @@ $global:TestsPassed = 0
 $global:TestsFailed = 0
 
 # Test Environment
-$TestDir = ""
+$global:TestDir = ""
+
+# Locate bash.exe (Git for Windows installs to a well-known path; we also try
+# a few alternatives so the harness works on dev machines that put Git
+# elsewhere).
+function Find-Bash {
+    $candidates = @(
+        "C:\Program Files\Git\bin\bash.exe",
+        "C:\Program Files (x86)\Git\bin\bash.exe",
+        "$env:LOCALAPPDATA\Programs\Git\bin\bash.exe"
+    )
+    foreach ($p in $candidates) {
+        if (Test-Path $p) { return $p }
+    }
+    # Fall back to PATH lookup
+    $cmd = Get-Command bash.exe -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    return $null
+}
+
+$global:BashExe = Find-Bash
+if (-not $global:BashExe) {
+    Write-Host "ERROR: bash.exe not found. Install Git for Windows or set PATH so bash is discoverable." -ForegroundColor Red
+    exit 1
+}
 
 function Setup-TestEnv {
     $global:TestDir = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
-    New-Item -ItemType Directory -Path $TestDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $global:TestDir -Force | Out-Null
 
-    # Structure
-    $Dirs = @(
-        "skills/mock-ui-skill",
-        "skills/mock-api-skill",
-        "skills/mock-sdk-skill",
-        "skills/mock-root-skill",
-        "skills/mock-no-metadata",
-        "skills/skill-sync/assets",
-        "ui",
-        "api",
-        "prowler"
+    # sync.sh's find_repo_root climbs PWD until it finds .agent/.agents. The
+    # fixture must create one at $TestDir so REPO_ROOT is anchored there.
+    New-Item -ItemType Directory -Path (Join-Path $global:TestDir ".agent") -Force | Out-Null
+
+    # Multi-provider skill directories (matches SKILL_PROVIDERS in lib/utils.sh).
+    $dirs = @(
+        ".claude\skills\claude-skill",
+        ".opencode\skills\opencode-skill",
+        ".qwen\skills\qwen-skill",
+        ".agents\skills\agents-skill",
+        ".agent\skills\no-metadata",
+        ".agent\skills\skill-sync\assets"
     )
-    foreach ($D in $Dirs) { New-Item -ItemType Directory -Path (Join-Path $TestDir $D) -Force | Out-Null }
+    foreach ($d in $dirs) {
+        New-Item -ItemType Directory -Path (Join-Path $global:TestDir $d) -Force | Out-Null
+    }
 
-    # Mock Skills
-
-    # UI
-    Set-Content (Join-Path $TestDir "skills/mock-ui-skill/SKILL.md") -Value @"
+    function Write-Skill([string]$RelPath, [string]$Name, [string]$Scope, [string]$Action) {
+        $path = Join-Path $global:TestDir $RelPath
+        $content = @"
 ---
-name: mock-ui-skill
-description: Mock UI skill.
+name: $Name
+description: >
+  Mock skill for $Name testing.
+license: Apache-2.0
 metadata:
   author: test
-  version: '1.0'
-  scope: [ui]
-  auto_invoke: 'Testing UI components'
+  version: "1.0"
+  scope: [$Scope]
+  auto_invoke: "$Action"
+allowed-tools: Read
 ---
-"@
 
-    # API
-    Set-Content (Join-Path $TestDir "skills/mock-api-skill/SKILL.md") -Value @"
+# $Name
+"@
+        # Write without UTF-8 BOM: bash awk in sync.sh reads the frontmatter
+        # with strict line-by-line matching and a BOM breaks the `^---$` test.
+        [System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($false))
+    }
+
+    Write-Skill ".claude\skills\claude-skill\SKILL.md" "claude-skill" "root" "Claude action"
+    Write-Skill ".opencode\skills\opencode-skill\SKILL.md" "opencode-skill" "root" "OpenCode action"
+    Write-Skill ".qwen\skills\qwen-skill\SKILL.md" "qwen-skill" "root" "Qwen action"
+    Write-Skill ".agents\skills\agents-skill\SKILL.md" "agents-skill" "root" "Agents action"
+
+    # Skill missing scope and auto_invoke -- must be reported in
+    # "Skills missing sync metadata" section.
+    $noMeta = @"
 ---
-name: mock-api-skill
+name: no-metadata
+description: Skill without sync metadata.
+license: Apache-2.0
 metadata:
   author: test
-  version: '1.0'
-  scope: [api]
-  auto_invoke: 'Testing API endpoints'
+  version: "1.0"
+allowed-tools: Read
 ---
 "@
+    [System.IO.File]::WriteAllText((Join-Path $global:TestDir ".agent\skills\no-metadata\SKILL.md"), $noMeta, [System.Text.UTF8Encoding]::new($false))
 
-    # SDK
-    Set-Content (Join-Path $TestDir "skills/mock-sdk-skill/SKILL.md") -Value @"
----
-name: mock-sdk-skill
-metadata:
-  author: test
-  version: '1.0'
-  scope: [sdk]
-  auto_invoke: 'Testing SDK checks'
----
+    # Target AGENTS.md (sync.sh writes root|api|common|infra|database here).
+    $agents = @"
+# Root AGENTS
+
+> **Skills Reference**: For detailed patterns, use these skills:
+> - [`agents-skill`](.agents/skills/agents-skill/SKILL.md)
+
+## Project Overview
+
+This is the root agents file.
 "@
+    [System.IO.File]::WriteAllText((Join-Path $global:TestDir "AGENTS.md"), $agents, [System.Text.UTF8Encoding]::new($false))
 
-    # Root
-    Set-Content (Join-Path $TestDir "skills/mock-root-skill/SKILL.md") -Value @"
----
-name: mock-root-skill
-metadata:
-  author: test
-  version: '1.0'
-  scope: [root]
-  auto_invoke: 'Testing root actions'
----
-"@
+    # Copy sync.sh to the canonical test location.
+    Copy-Item $SyncScript (Join-Path $global:TestDir ".agent\skills\skill-sync\assets\sync.sh") -Force
 
-    # No Metadata
-    Set-Content (Join-Path $TestDir "skills/mock-no-metadata/SKILL.md") -Value @"
----
-name: mock-no-metadata
-metadata:
-  author: test
----
-"@
+    # Locate utils.sh by walking up from $ScriptDir (the test may live in any
+    # of the project's provider mirrors). Look for lib/utils.sh, utils.sh,
+    # .agents/skills/lib/utils.sh, .agent/skills/lib/utils.sh, or
+    # skills/lib/utils.sh at each ancestor up to 8 levels deep.
+    $utilsSrc = $null
+    $search = $ScriptDir
+    for ($i = 0; $i -lt 8; $i++) {
+        $search = Split-Path -Path $search -Parent
+        if (-not $search) { break }
+        $candidates = @(
+            (Join-Path $search "lib\utils.sh"),
+            (Join-Path $search "utils.sh"),
+            (Join-Path $search ".agents\skills\lib\utils.sh"),
+            (Join-Path $search ".agent\skills\lib\utils.sh"),
+            (Join-Path $search "skills\lib\utils.sh"),
+            (Join-Path $search "internal\coreskills\skills\lib\utils.sh")
+        )
+        foreach ($c in $candidates) {
+            if (Test-Path $c) { $utilsSrc = $c; break }
+        }
+        if ($utilsSrc) { break }
+    }
 
-    # Mock AGENTS.md
-    Set-Content (Join-Path $TestDir "AGENTS.md") -Value "# Root AGENTS`n`n> **Skills Reference**`n`n## Overview"
-    Set-Content (Join-Path $TestDir "ui/AGENTS.md") -Value "# UI AGENTS`n`n> **Skills Reference**`n`n## CRITICAL RULES"
-    Set-Content (Join-Path $TestDir "api/AGENTS.md") -Value "# API AGENTS`n`n> **Skills Reference**`n`n## CRITICAL RULES"
-    Set-Content (Join-Path $TestDir "prowler/AGENTS.md") -Value "# SDK AGENTS`n`n> **Skills Reference**`n`n## Overview"
-
-    # Copy sync script to test location (it expects to be in .agent/skills/skill-sync/assets)
-    # The script calculates RepoRoot by going up 4 levels.
-    # $TestDir/skills/skill-sync/assets/sync.ps1 -> RepoRoot is $TestDir
-    Copy-Item $SyncScript (Join-Path $TestDir "skills/skill-sync/assets/sync.ps1")
-}
-
-function Teardown-TestEnv {
-    if ($TestDir -and (Test-Path $TestDir)) {
-        Remove-Item $TestDir -Recurse -Force
+    if ($utilsSrc) {
+        $utilsDest = Join-Path $global:TestDir ".agent\skills\lib\utils.sh"
+        New-Item -ItemType Directory -Path (Split-Path $utilsDest) -Force | Out-Null
+        Copy-Item $utilsSrc $utilsDest -Force
+    } else {
+        Write-Host "ERROR: sync_test.ps1 could not locate lib/utils.sh from $ScriptDir" -ForegroundColor Red
     }
 }
 
+function Teardown-TestEnv {
+    if ($global:TestDir -and (Test-Path $global:TestDir)) {
+        Remove-Item $global:TestDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $global:TestDir = ""
+}
+
+function Invoke-Sync {
+    # Run sync.sh under bash with the same args we receive. We must cd into
+    # $TestDir first so sync.sh's find_repo_root anchors REPO_ROOT there.
+    # Output is captured (including stdout+stderr) and returned as a single
+    # string. ANSI color codes are preserved -- callers can use Select-String
+    # which ignores them as long as the needle text is plain.
+    param([string[]]$Arguments)
+    $script = Join-Path $global:TestDir ".agent\skills\skill-sync\assets\sync.sh"
+    $testDirPosix = $global:TestDir -replace '\\','/'
+    $scriptPosix = $script -replace '\\','/'
+    $extraArgs = ""
+    foreach ($a in $Arguments) {
+        if ($extraArgs.Length -gt 0) { $extraArgs += " " }
+        $extraArgs += ([System.Management.Automation.Language.CodeGeneration]::EscapeSingleQuotedStringContent($a))
+    }
+    $cmd = "cd '$testDirPosix' && bash '$scriptPosix' $extraArgs"
+    $output = & $global:BashExe -c $cmd 2>&1 | Out-String
+    return $output
+}
+
 function Run-Test {
-    param ($Name, $ScriptBlock)
+    param($Name, $ScriptBlock)
     $global:TestsRun++
     Write-Host -NoNewline "  $Name... "
     Setup-TestEnv
@@ -128,143 +198,227 @@ function Run-Test {
     Teardown-TestEnv
 }
 
-# Wrapper to run sync.ps1 in the test env
-function Invoke-Sync {
-    param ([switch]$DryRun)
-    $Script = Join-Path $TestDir "skills/skill-sync/assets/sync.ps1"
-    # We need to run it in a new scope so PSScriptRoot is correct
-    # But for now, invoking it with & should work if the script uses PSScriptRoot correctly
-    if ($DryRun) {
-        # Capture output
-        & $Script # sync.ps1 doesn't have a dry-run param yet based on my previous impl?
-                  # WAIT: I created sync.ps1 earlier. Let me double check if I added DryRun.
-                  # I checked my memory/previous turn: "Syncing skills to AGENTS.md..." ... "if (-not (Test-Path $AgentsFile))"
-                  # I did NOT add params to sync.ps1 in the previous turn! I only implemented the core logic.
-                  # The bash script HAS --dry-run.
-                  # I should probably update sync.ps1 to support DryRun or skip that test.
-                  # For now, I'll assume standard execution.
-    } else {
-        & $Script *>$null
-    }
+function Assert-Contains {
+    param($Haystack, $Needle, $Message)
+    if ($Haystack | Select-String -SimpleMatch $Needle -Quiet) { return }
+    throw "$Message :: string not found: $Needle"
 }
 
-Write-Host "`nðŸ§ª Running sync.ps1 unit tests"
+function Assert-NotContains {
+    param($Haystack, $Needle, $Message)
+    if (-not ($Haystack | Select-String -SimpleMatch $Needle -Quiet)) { return }
+    throw "$Message :: string should not be found: $Needle"
+}
+
+function Assert-FileContains {
+    param($File, $Needle, $Message)
+    $content = Get-Content -Path $File -Raw
+    if ($content | Select-String -SimpleMatch $Needle -Quiet) { return }
+    throw "$Message :: file $File missing: $Needle"
+}
+
+function Assert-FileNotContains {
+    param($File, $Needle, $Message)
+    $content = Get-Content -Path $File -Raw -ErrorAction SilentlyContinue
+    if (-not $content) { return }
+    if (-not ($content | Select-String -SimpleMatch $Needle -Quiet)) { return }
+    throw "$Message :: file $File should not contain: $Needle"
+}
+
+function Assert-Equals {
+    param($Expected, $Actual, $Message)
+    if ($Expected -eq $Actual) { return }
+    throw "$Message :: expected '$Expected' got '$Actual'"
+}
+
+Write-Host ""
+Write-Host "Running sync.sh unit tests (via bash on Windows)"
 Write-Host "=============================="
 
-# Test 1: Basic Generation
-Run-Test "Generate UI Auto-invoke" {
-    Invoke-Sync
-    $Content = Get-Content (Join-Path $TestDir "ui/AGENTS.md") -Raw
-    if ($Content -notmatch "### Auto-invoke Skills") { throw "Auto-invoke section missing" }
-    if ($Content -notmatch "mock-ui-skill") { throw "mock-ui-skill missing" }
-    if ($Content -match "mock-api-skill") { throw "mock-api-skill should not be in UI" }
+# Flag tests
+Run-Test "flag help shows usage" {
+    $out = Invoke-Sync @("--help")
+    Assert-Contains $out "Usage:" "Help should show usage"
+    Assert-Contains $out "--dry-run" "Help should mention --dry-run"
+    Assert-Contains $out "--scope" "Help should mention --scope"
 }
 
-Run-Test "Generate API Auto-invoke" {
-    Invoke-Sync
-    $Content = Get-Content (Join-Path $TestDir "api/AGENTS.md") -Raw
-    if ($Content -notmatch "mock-api-skill") { throw "mock-api-skill missing" }
+Run-Test "flag unknown reports error" {
+    $out = Invoke-Sync @("--unknown")
+    Assert-Contains $out "Unknown option" "Should report unknown option"
 }
 
-Run-Test "Generate SDK Auto-invoke" {
-    # In bash script it checked "prowler/AGENTS.md" for sdk scope
-    # Wait, my sync.ps1 implementation looked for AGENTS.md at RepoRoot only?
-    # Let me re-read my sync.ps1 implementation from previous turn.
-    # "$AgentsFile = Join-Path $RepoRoot 'AGENTS.md'"
-    # Ah! My previous sync.ps1 ONLY updated the root AGENTS.md!
-    # The bash script supports multiple scopes (root, api, common, infra -> root AGENTS.md) but technically the bash script *checks* specific paths if implemented that way.
-    # Actually, looking at the bash script `get_agents_path`:
-    # root|api|common|infra|database -> $REPO_ROOT/AGENTS.md
-    # So ALL scopes go to the MAIN AGENTS.md in the bash script too!
-    # Wait, looking at `sync_test.sh`:
-    # `cat > "$TEST_DIR/ui/AGENTS.md"`
-    # The test expects `ui/AGENTS.md` to be updated.
-    # But `sync.sh` `get_agents_path` function says:
-    # case "$scope" in root|api|common|infra|database) echo "$REPO_ROOT/AGENTS.md" ;; *) echo "" ;;
-    #
-    # Wait, if `sync.sh` only updates root AGENTS.md, how does `sync_test.sh` pass `test_generate_correct_skill_in_ui`?
-    # Maybe I misread `sync.sh`.
-    # Let's check `sync.sh` again.
-    # `get_agents_path` logic:
-    # case "$scope" in root|api|common|infra|database) echo "$REPO_ROOT/AGENTS.md" ;;
-    #
-    # Unless `ui` maps to something else?
-    # In `sync_test.sh`, it creates `$TEST_DIR/ui/AGENTS.md`.
-    # And asserts `assert_file_contains "$TEST_DIR/ui/AGENTS.md"`.
-    # This implies `sync.sh` DOES update `ui/AGENTS.md`.
-    #
-    # Re-reading `sync.sh` output I got earlier:
-    # ```bash
-    # get_agents_path() {
-    #    local scope="$1"
-    #    case "$scope" in
-    #        root|api|common|infra|database) echo "$REPO_ROOT/AGENTS.md" ;;
-    #        *)    echo "" ;;
-    #    esac
-    # }
-    # ```
-    # This logic seems to imply ONLY root AGENTS.md is supported.
-    # BUT, looking at `sync_test.sh`:
-    # `cat > "$TEST_DIR/ui/AGENTS.md" ...`
-    # `assert_file_contains "$TEST_DIR/ui/AGENTS.md" ...`
-    #
-    # CONTRADICTION: The test expects UI agents file, but the script (as I read it) only points to root.
-    #
-    # Possibility 1: I misread `sync.sh`.
-    # Possibility 2: The `sync.sh` I read is an old version or incomplete in my read?
-    # Possibility 3: `sync.sh` has logic `if [ -f "$REPO_ROOT/$scope/AGENTS.md" ]`?
-    #
-    # Let's look closer at `sync.sh` provided in context:
-    # It does NOT have dynamic path resolution.
-    #
-    # Wait, in the `sync.sh` provided:
-    # `Processing: ui -> AGENTS.md` (if it matched root)
-    #
-    # Actually, if I look at the previous `read_file` output for `sync.sh`:
-    # It explicitly defines `get_agents_path`.
-    #
-    # I suspect the `sync.sh` I read might be a "root only" version, but the test expects more.
-    # OR, the `sync.sh` I read is actually valid and I'm missing something.
-    #
-    # HOWEVER, my `sync.ps1` implementation definitely only does ROOT.
-    # `AgentsFile = Join-Path $RepoRoot "AGENTS.md"`
-    #
-    # If the user wants `sync.ps1` to be a TRUE port, it should probably behave like `sync.sh`.
-    # Since `sync.sh` seems to only target root AGENTS.md (based on the case statement), I will stick to that behavior.
-    # But wait, `sync_test.sh` logic suggests otherwise.
-    #
-    # Let's assume the `sync.sh` I read is the source of truth for THIS repo.
-    # If `sync_test.sh` fails against `sync.sh` in reality, that's a bug in the bash scripts.
-    #
-    # I will adapt the test to match what `sync.ps1` actually DOES (which is update root AGENTS.md).
-    #
-    # Also, I need to make sure `sync.ps1` handles the `auto_invoke` list parsing correctly (I implemented regex for lists in `list-skills.ps1` but `sync.ps1` also needs it).
-    # My `sync.ps1` implementation from the previous turn supports lists:
-    # `if ($RawInvoke -match "^\s*-\s*")`
-    #
-    # So `sync.ps1` is good.
-
-    # I will simplify the test to just check if `AGENTS.md` (root) gets updated, since that's what my `sync.ps1` does.
-    # I won't try to replicate the folder-specific logic if `sync.ps1` doesn't support it yet.
-
-    Invoke-Sync
-    $Content = Get-Content (Join-Path $TestDir "AGENTS.md") -Raw
-
-    # Root skill
-    if ($Content -notmatch "mock-root-skill") { throw "mock-root-skill missing" }
-
-    # UI skill (Since my sync.ps1 currently dumps ALL skills into AGENTS.md if they have auto_invoke, unless filtered?)
-    # My sync.ps1: `$SkillFiles = Get-ChildItem ...` -> `foreach` -> `if ($Content -match "auto_invoke")` -> Add to list.
-    # It adds ALL skills to the list.
-    # It outputs ONE table to `AGENTS.md`.
-
-    if ($Content -notmatch "mock-ui-skill") { throw "mock-ui-skill missing (sync.ps1 puts all in root)" }
+Run-Test "flag dryrun shows changes" {
+    $out = Invoke-Sync @("--dry-run")
+    Assert-Contains $out "[DRY RUN]" "Should show dry run marker"
+    Assert-Contains $out "Would update" "Should say would update"
 }
 
-Write-Host "`n=============================="
+Run-Test "flag dryrun no file changes" {
+    $null = Invoke-Sync @("--dry-run")
+    Assert-FileNotContains (Join-Path $global:TestDir "AGENTS.md") "### Auto-invoke Skills" "AGENTS.md should not be modified in dry run"
+}
+
+Run-Test "flag scope filters to matching" {
+    # Switch opencode-skill to a non-root scope so the filter is observable.
+    $path = Join-Path $global:TestDir ".opencode\skills\opencode-skill\SKILL.md"
+    $content = @"
+---
+name: opencode-skill
+description: Mock skill under .opencode with a non-root scope.
+license: Apache-2.0
+metadata:
+  author: test
+  version: "1.0"
+  scope: [ui]
+  auto_invoke: "OpenCode action"
+allowed-tools: Read
+---
+"@
+    [System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($false))
+
+    $out = Invoke-Sync @("--dry-run", "--scope", "root")
+    Assert-Contains $out "Processing: root" "Should process root scope"
+    Assert-NotContains $out "Processing: ui" "Should not process ui scope"
+}
+
+# Metadata tests
+Run-Test "metadata extracts scope" {
+    $out = Invoke-Sync @("--dry-run")
+    Assert-Contains $out "Processing: root" "Should detect root scope"
+}
+
+Run-Test "metadata extracts auto invoke" {
+    $out = Invoke-Sync @("--dry-run")
+    Assert-Contains $out "Claude action" "Should extract claude-skill auto_invoke"
+    Assert-Contains $out "OpenCode action" "Should extract opencode-skill auto_invoke"
+    Assert-Contains $out "Agents action" "Should extract agents-skill auto_invoke"
+}
+
+Run-Test "metadata missing reports skills" {
+    $out = Invoke-Sync @("--dry-run")
+    Assert-Contains $out "Skills missing sync metadata" "Should report missing metadata section"
+    Assert-Contains $out "no-metadata" "Should list skill without metadata"
+}
+
+# Generation tests
+Run-Test "generate creates section" {
+    $null = Invoke-Sync @()
+    $agentsPath = Join-Path $global:TestDir "AGENTS.md"
+    Assert-FileContains $agentsPath "### Auto-invoke Skills" "Should create Auto-invoke section"
+    Assert-FileContains $agentsPath "| Action | Skill |" "Should create table header"
+}
+
+Run-Test "generate includes all skills" {
+    $null = Invoke-Sync @()
+    $agentsPath = Join-Path $global:TestDir "AGENTS.md"
+    Assert-FileContains $agentsPath "claude-skill" "AGENTS.md should contain claude-skill"
+    Assert-FileContains $agentsPath "opencode-skill" "AGENTS.md should contain opencode-skill"
+    Assert-FileContains $agentsPath "qwen-skill" "AGENTS.md should contain qwen-skill"
+    Assert-FileContains $agentsPath "agents-skill" "AGENTS.md should contain agents-skill"
+}
+
+Run-Test "generate uses action text" {
+    $null = Invoke-Sync @()
+    $agentsPath = Join-Path $global:TestDir "AGENTS.md"
+    Assert-FileContains $agentsPath "Claude action" "Should include claude-skill auto_invoke text"
+    Assert-FileContains $agentsPath "OpenCode action" "Should include opencode-skill auto_invoke text"
+}
+
+Run-Test "generate splits multi action auto invoke list" {
+    $path = Join-Path $global:TestDir ".claude\skills\claude-skill\SKILL.md"
+    $content = @"
+---
+name: claude-skill
+description: Mock skill with multi-action auto_invoke list.
+license: Apache-2.0
+metadata:
+  author: test
+  version: "1.0"
+  scope: [root]
+  auto_invoke:
+    - "Action B"
+    - "Action A"
+allowed-tools: Read
+---
+"@
+    [System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($false))
+
+    $null = Invoke-Sync @()
+    $agentsPath = Join-Path $global:TestDir "AGENTS.md"
+    # Use single-quoted here-strings: backticks are literal in single-quoted
+    # PowerShell strings (no escape interpretation).
+    $rowA = '| Action A | `claude-skill` |'
+    $rowB = '| Action B | `claude-skill` |'
+    Assert-FileContains $agentsPath $rowA "Should create row for Action A"
+    Assert-FileContains $agentsPath $rowB "Should create row for Action B"
+}
+
+# Update tests
+Run-Test "update preserves header" {
+    $null = Invoke-Sync @()
+    $agentsPath = Join-Path $global:TestDir "AGENTS.md"
+    Assert-FileContains $agentsPath "# Root AGENTS" "Should preserve original header"
+}
+
+Run-Test "update preserves skills reference" {
+    $null = Invoke-Sync @()
+    $agentsPath = Join-Path $global:TestDir "AGENTS.md"
+    Assert-FileContains $agentsPath "Skills Reference" "Should preserve Skills Reference section"
+}
+
+Run-Test "update preserves content after" {
+    $null = Invoke-Sync @()
+    $agentsPath = Join-Path $global:TestDir "AGENTS.md"
+    Assert-FileContains $agentsPath "## Project Overview" "Should preserve content after the inserted block"
+}
+
+# Idempotency tests
+Run-Test "idempotent multiple runs" {
+    $null = Invoke-Sync @()
+    $first = Get-Content (Join-Path $global:TestDir "AGENTS.md") -Raw
+    $null = Invoke-Sync @()
+    $second = Get-Content (Join-Path $global:TestDir "AGENTS.md") -Raw
+    Assert-Equals $first $second "Multiple runs should produce identical output"
+}
+
+Run-Test "idempotent no duplicate sections" {
+    $null = Invoke-Sync @()
+    $null = Invoke-Sync @()
+    $null = Invoke-Sync @()
+    $count = (Select-String -Path (Join-Path $global:TestDir "AGENTS.md") -Pattern "### Auto-invoke Skills" -SimpleMatch).Count
+    Assert-Equals 1 $count "Should have exactly one Auto-invoke section"
+}
+
+# Multiscope test
+Run-Test "multiscope skill processes both scopes" {
+    $path = Join-Path $global:TestDir ".claude\skills\claude-skill\SKILL.md"
+    $content = @"
+---
+name: claude-skill
+description: Mock skill with multiple scopes.
+license: Apache-2.0
+metadata:
+  author: test
+  version: "1.0"
+  scope: [root, api]
+  auto_invoke: "Multi-scope action"
+allowed-tools: Read
+---
+"@
+    [System.IO.File]::WriteAllText($path, $content, [System.Text.UTF8Encoding]::new($false))
+
+    $out = Invoke-Sync @("--dry-run")
+    Assert-Contains $out "Processing: root" "Should process root scope"
+    Assert-Contains $out "Processing: api" "Should process api scope"
+}
+
+Write-Host ""
+Write-Host "=============================="
 if ($global:TestsFailed -eq 0) {
-    Write-Host "âœ… All $global:TestsRun tests passed!" -ForegroundColor Green
+    Write-Host "All $global:TestsRun tests passed!" -ForegroundColor Green
+    exit 0
 } else {
-    Write-Host "X $global:TestsFailed of $global:TestsRun tests failed" -ForegroundColor Red
+    Write-Host "$($global:TestsFailed) of $($global:TestsRun) tests failed" -ForegroundColor Red
     exit 1
 }

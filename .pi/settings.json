@@ -34,24 +34,5 @@
 			],
 			"type": "local"
 		}
-	},
-	"subagents": {
-		"agentOverrides": {
-			"reviewer": {
-				"model": "opencode-go/qwen3.6-plus"
-			},
-			"context-builder": {
-				"model": "gemini-acp/gemini-3.1-pro-preview"
-			},
-			"planner": {
-				"model": "openai-codex/gpt-5.5"
-			},
-			"scout": {
-				"model": "gemini-acp/gemini-3-flash-preview"
-			},
-			"worker": {
-				"model": "gemini-acp/gemini-3-flash-preview"
-			}
-		}
 	}
 }

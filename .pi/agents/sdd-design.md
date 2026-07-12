@@ -1,7 +1,8 @@
 ---
 name: sdd-design
 description: Design the technical approach for an SDD change.
-model: openai-codex/gpt-5.5
+model: opencode-go/glm-5.2
+thinking: xhigh
 tools: read, grep, glob, write, edit
 inheritProjectContext: true
 ---

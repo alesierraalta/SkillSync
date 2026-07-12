@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-// SyncResult captures the output of the sync process
+// SyncResult captures the output of the legacy script sync process.
 type SyncResult struct {
 	Stdout   string
 	Stderr   string
@@ -34,17 +34,17 @@ type SyncReport struct {
 	Changes []FileChange
 }
 
-// Runner handles execution of shell scripts
-const DefaultSyncPath = ".agents/skills/skill-sync/assets/sync.sh"
+// LegacySyncScriptPath is the historical sync.sh location kept for legacy script compatibility.
+const LegacySyncScriptPath = ".agents/skills/skill-sync/assets/sync.sh"
 
-// Runner handles execution of shell scripts
-type Runner struct {
+// LegacyScriptRunner handles execution of the historical sync.sh-compatible scripts.
+type LegacyScriptRunner struct {
 	DefaultScriptPath string
 }
 
-// NewRunner creates a new instance of Runner
-func NewRunner(defaultPath string) *Runner {
-	return &Runner{DefaultScriptPath: defaultPath}
+// NewLegacyScriptRunner creates a new legacy script runner.
+func NewLegacyScriptRunner(defaultPath string) *LegacyScriptRunner {
+	return &LegacyScriptRunner{DefaultScriptPath: defaultPath}
 }
 
 func prepareScriptForExecution(path string) (string, func(), error) {
@@ -87,8 +87,8 @@ func prepareScriptForExecution(path string) (string, func(), error) {
 	return tmpPath, cleanup, nil
 }
 
-// ExecuteSync runs the sync script asynchronously
-func (r *Runner) ExecuteSync(ctx context.Context, args []string) <-chan SyncResult {
+// ExecuteLegacyScriptSync runs a legacy sync script asynchronously.
+func (r *LegacyScriptRunner) ExecuteLegacyScriptSync(ctx context.Context, args []string) <-chan SyncResult {
 	res := make(chan SyncResult, 1)
 
 	go func() {
@@ -159,7 +159,7 @@ func (r *Runner) ExecuteSync(ctx context.Context, args []string) <-chan SyncResu
 				exitCode = 1
 			}
 
-			// If we have an error but stderr is empty, it's likely a command-not-found 
+			// If we have an error but stderr is empty, it's likely a command-not-found
 			// or execution permission error. Populate stderr with the error message.
 			if stderrStr == "" {
 				stderrStr = err.Error()

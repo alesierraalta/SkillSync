@@ -2,7 +2,7 @@
 name: skill-sync
 description: >
   Syncs skill metadata to AGENTS.md Auto-invoke sections.
-  Trigger: When updating skill metadata (metadata.scope/metadata.auto_invoke), regenerating Auto-invoke tables, or running ./.agent/skills/skill-sync/assets/sync.sh (including --dry-run/--scope).
+  Trigger: When updating skill metadata (metadata.scope/metadata.auto_invoke), regenerating Auto-invoke tables, or running ./.agents/skills/skill-sync/assets/sync.sh (including --dry-run/--scope).
 metadata:
   author: a.sierra
   version: '1.0'
@@ -38,7 +38,7 @@ metadata:
   # auto_invoke:
   #   - "Creating/modifying components"
   #   - "Refactoring component folder placement"
-`	ext
+```
 
 ### Scope Values
 
@@ -58,12 +58,12 @@ Skills can have multiple scopes: `scope: [api, common]`. All scopes currently up
 ### After Creating/Modifying a Skill
 
 ```bash
-./.agent/skills/skill-sync/assets/sync.sh
-`	ext
+./.agents/skills/skill-sync/assets/sync.sh
+```
 
 ### What It Does
 
-1. Reads all `.agent/skills/*/SKILL.md` files
+1. Reads all `.agents/skills/*/SKILL.md` files
 2. Extracts `metadata.scope` and `metadata.auto_invoke`
 3. Generates Auto-invoke tables for each AGENTS.md
 4. Updates the `### Auto-invoke Skills` section in each file
@@ -75,12 +75,12 @@ Skills can have multiple scopes: `scope: [api, common]`. All scopes currently up
 Given this skill metadata:
 
 ```yaml
-# .agent/skills/myapp-ui/SKILL.md
+# .agents/skills/myapp-ui/SKILL.md
 metadata:
   version: '1.0'
   scope: [ui]
   auto_invoke: 'Creating/modifying React components'
-`	ext
+```
 
 The sync script generates in `ui/AGENTS.md`:
 
@@ -92,7 +92,7 @@ When performing these actions, ALWAYS invoke the corresponding skill FIRST:
 | Action                              | Skill      |
 | ----------------------------------- | ---------- |
 | Creating/modifying React components | `myapp-ui` |
-`	ext
+```
 
 ---
 
@@ -100,14 +100,14 @@ When performing these actions, ALWAYS invoke the corresponding skill FIRST:
 
 ```bash
 # Sync all AGENTS.md files
-./.agent/skills/skill-sync/assets/sync.sh
+./.agents/skills/skill-sync/assets/sync.sh
 
 # Dry run (show what would change)
-./.agent/skills/skill-sync/assets/sync.sh --dry-run
+./.agents/skills/skill-sync/assets/sync.sh --dry-run
 
 # Sync specific scope only
-./.agent/skills/skill-sync/assets/sync.sh --scope ui
-`	ext
+./.agents/skills/skill-sync/assets/sync.sh --scope ui
+```
 
 ---
 
@@ -115,5 +115,5 @@ When performing these actions, ALWAYS invoke the corresponding skill FIRST:
 
 - [ ] Added `metadata.scope` to new/modified skill
 - [ ] Added `metadata.auto_invoke` with action description
-- [ ] Ran `./.agent/skills/skill-sync/assets/sync.sh`
+- [ ] Ran `./.agents/skills/skill-sync/assets/sync.sh`
 - [ ] Verified AGENTS.md files updated correctly

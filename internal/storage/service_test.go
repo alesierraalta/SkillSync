@@ -12,7 +12,7 @@ import (
 
 func TestStorage(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+
 	s := &Service{
 		RootPath: tmpDir,
 	}
@@ -21,7 +21,7 @@ func TestStorage(t *testing.T) {
 		Name:    "test-skill",
 		RawBody: "full skill content with --- and metadata",
 	}
-	
+
 	metadata := StoredMetadata{
 		SkillName:     skill.Name,
 		OriginProject: "/abs/path/project",
@@ -72,7 +72,7 @@ func TestStorage(t *testing.T) {
 			Name:    "test-skill",
 			RawBody: originalContent,
 		}
-		
+
 		metadata := StoredMetadata{
 			SkillName: "test-skill",
 			SavedAt:   time.Now(),
@@ -86,7 +86,7 @@ func TestStorage(t *testing.T) {
 
 		skillPath := filepath.Join(tmpDir, "test-skill", "SKILL.md")
 		content, _ := os.ReadFile(skillPath)
-		
+
 		if !strings.Contains(string(content), originalContent) {
 			t.Errorf("Byte-for-byte failure. Expected body %q to be in %q", originalContent, string(content))
 		}
@@ -138,7 +138,6 @@ func TestSavePersistsFullFormattedContent(t *testing.T) {
 		t.Error("Body missing in saved file")
 	}
 }
-
 
 func TestDelete(t *testing.T) {
 	t.Run("deletes stored skill directory", func(t *testing.T) {

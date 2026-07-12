@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestExecuteSync_PathResolutionRegression(t *testing.T) {
+func TestExecuteLegacyScriptSync_PathResolutionRegression(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		if _, err := exec.LookPath("sh"); err != nil {
 			if _, err := exec.LookPath("bash"); err != nil {
@@ -41,7 +41,7 @@ export UTILS_LOADED=true
 		t.Fatal(err)
 	}
 
-	// Real logic from sync.sh
+	// Legacy compatibility logic from sync.sh.
 	syncContent := `#!/usr/bin/env bash
 SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
 SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
@@ -80,14 +80,14 @@ fi
 	}
 	defer os.Chdir(originalWd)
 
-	// Runner uses relative path from root
+	// LegacyScriptRunner uses the legacy relative path from root.
 	relSyncPath := filepath.Join(".agents", "skills", "skill-sync", "assets", "sync.sh")
-	runner := NewRunner(relSyncPath)
+	runner := NewLegacyScriptRunner(relSyncPath)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	ch := runner.ExecuteSync(ctx, nil)
+	ch := runner.ExecuteLegacyScriptSync(ctx, nil)
 	result := <-ch
 
 	if result.ExitCode != 0 {
@@ -101,7 +101,7 @@ fi
 	}
 }
 
-func TestExecuteSync_NormalizesCRLFShellScript(t *testing.T) {
+func TestExecuteLegacyScriptSync_NormalizesCRLFShellScript(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		if _, err := exec.LookPath("sh"); err != nil {
 			if _, err := exec.LookPath("bash"); err != nil {
@@ -128,11 +128,11 @@ func TestExecuteSync_NormalizesCRLFShellScript(t *testing.T) {
 	}
 	defer os.Chdir(originalWd)
 
-	runner := NewRunner(filepath.Join(".agents", "skills", "skill-sync", "assets", "sync.sh"))
+	runner := NewLegacyScriptRunner(filepath.Join(".agents", "skills", "skill-sync", "assets", "sync.sh"))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	result := <-runner.ExecuteSync(ctx, nil)
+	result := <-runner.ExecuteLegacyScriptSync(ctx, nil)
 	if result.ExitCode != 0 {
 		t.Fatalf("expected CRLF script to run, exit code %d, stderr: %q", result.ExitCode, result.Stderr)
 	}

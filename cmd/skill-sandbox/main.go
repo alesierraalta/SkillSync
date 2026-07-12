@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"skillsync/tui/internal/sandbox"
 	"skillsync/tui/internal/parser"
+	"skillsync/tui/internal/sandbox"
 	"skillsync/tui/internal/types"
 )
 
@@ -91,7 +91,7 @@ func main() {
 		os.Exit(1)
 	}
 	virtualPaths := sb.RunVirtualDiscovery()
-	
+
 	result.Discovered = found
 	result.VirtualPaths = virtualPaths
 
@@ -104,7 +104,7 @@ func main() {
 	if !*jsonMode {
 		fmt.Println("--- Parsing & Inspecting ---")
 	}
-	
+
 	// Standard Skills
 	skills, err := sb.ParseSkills(found)
 	if err != nil {
@@ -154,7 +154,7 @@ func main() {
 		if !*jsonMode {
 			fmt.Println("--- Installer Simulation ---")
 		}
-		
+
 		// Use skill-creator as source for test
 		sourceSkill := filepath.Join(".", ".agents", "skills", "skill-creator", "SKILL.md")
 		installErr := sb.SimulateInstall("new-skill", ".agents", sourceSkill)
@@ -170,7 +170,7 @@ func main() {
 			if !*jsonMode {
 				fmt.Println("[OK] Installation successful.")
 			}
-			
+
 			reFound, _ := sb.RunDiscovery()
 			foundNew := false
 			for _, rf := range reFound {

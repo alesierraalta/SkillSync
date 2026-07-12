@@ -11,18 +11,18 @@ import (
 func TestDiscoverSkills(t *testing.T) {
 	// Setup temp dir
 	tmp := t.TempDir()
-	
+
 	// Create structure
 	// tmp/
 	//   skill1/SKILL.md
 	//   nested/skill2/SKILL.md
 	//   no-skill/file.txt
-	
+
 	paths := []string{
 		filepath.Join(tmp, ".agents", "skills", "skill1", "SKILL.md"),
 		filepath.Join(tmp, ".opencode", "nested", "skill2", "SKILL.md"),
 	}
-	
+
 	for _, p := range paths {
 		if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
 			t.Fatal(err)
@@ -31,7 +31,7 @@ func TestDiscoverSkills(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	
+
 	// Should skip this (not a known provider)
 	ignorePath := filepath.Join(tmp, ".git", "hooks", "SKILL.md")
 	os.MkdirAll(filepath.Dir(ignorePath), 0755)
@@ -61,7 +61,7 @@ func TestDiscoverSkills(t *testing.T) {
 			}
 		}
 	}
-	
+
 	if count != 2 {
 		t.Errorf("Expected to find all created skill paths, matches: %d", count)
 	}
@@ -278,7 +278,6 @@ func TestDiscoverSkills_WithSymlinks(t *testing.T) {
 	}
 }
 
-
 func TestScanProjects(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -312,9 +311,9 @@ func TestScanProjects(t *testing.T) {
 		}
 
 		expected := map[string]bool{
-			p1: true,
-			p2: true,
-			p3: true,
+			p1:                                    true,
+			p2:                                    true,
+			p3:                                    true,
 			filepath.Join(tmpDir, "nested", "p4"): true,
 		}
 

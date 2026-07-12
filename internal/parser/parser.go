@@ -3,6 +3,7 @@ package parser
 import (
 	"bytes"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,7 +91,7 @@ func ParseContentWithName(content string, defaultName string) (*types.Skill, err
 	}
 
 	return &types.Skill{
-		Name:     flexible.Name,
+		Name:     skillName,
 		Prefix:   prefix,
 		Metadata: meta,
 		RawBody:  body,
@@ -151,16 +152,48 @@ func Format(skill *types.Skill) (string, error) {
 	}
 
 	if yamlStr == "" {
-		// No existing file or no frontmatter, create minimal YAML
-		var autoInvokeLines []string
-		for _, trigger := range skill.Metadata.AutoInvoke {
-			autoInvokeLines = append(autoInvokeLines, fmt.Sprintf("  - %s", trigger))
+		var localOnlyPtr *bool
+		if skill.Metadata.LocalOnly {
+			val := true
+			localOnlyPtr = &val
 		}
-		var autoInvokeYaml string
-		if len(autoInvokeLines) > 0 {
-			autoInvokeYaml = "\nauto_invoke:\n" + strings.Join(autoInvokeLines, "\n")
+		var autoInvoke []string
+		if len(skill.Metadata.AutoInvoke) > 0 {
+			autoInvoke = skill.Metadata.AutoInvoke
 		}
-		return skill.Prefix + "---\nscope: " + skill.Metadata.Scope + autoInvokeYaml + "\n---\n" + skill.RawBody, nil
+		frontmatter := struct {
+			Name        string   `yaml:"name,omitempty"`
+			Description string   `yaml:"description,omitempty"`
+			Scope       string   `yaml:"scope,omitempty"`
+			LocalOnly   *bool    `yaml:"local_only,omitempty"`
+			AutoInvoke  []string `yaml:"auto_invoke,omitempty"`
+		}{
+			Name:        skill.Name,
+			Description: skill.Metadata.Description,
+			Scope:       skill.Metadata.Scope,
+			LocalOnly:   localOnlyPtr,
+			AutoInvoke:  autoInvoke,
+		}
+
+		var buf bytes.Buffer
+		enc := yaml.NewEncoder(&buf)
+		enc.SetIndent(2)
+		if err := enc.Encode(&frontmatter); err != nil {
+			return "", err
+		}
+
+		yamlResult := buf.String()
+		if !strings.HasPrefix(yamlResult, "---") {
+			yamlResult = "---\n" + yamlResult
+		}
+		if !strings.HasSuffix(yamlResult, "---\n") {
+			if strings.HasSuffix(yamlResult, "---") {
+				yamlResult = yamlResult + "\n"
+			} else {
+				yamlResult = yamlResult + "---\n"
+			}
+		}
+		return skill.Prefix + yamlResult + skill.RawBody, nil
 	}
 
 	var node yaml.Node
@@ -204,17 +237,49 @@ func Format(skill *types.Skill) (string, error) {
 // Save writes SKILL.md back with comments preserved.
 // Note: Metadata fields are updated into the YAML Node structure.
 func Save(path string, skill *types.Skill) error {
+	tmpPath := path + ".tmp"
+	defer func() {
+		if err := os.Remove(tmpPath); err != nil && !os.IsNotExist(err) {
+			slog.Warn("failed to remove tmp file", "path", tmpPath, "err", err)
+		}
+	}()
+
 	finalContent, err := Format(skill)
 	if err != nil {
 		return err
 	}
 
-	// Atomic write
-	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, []byte(finalContent), 0644); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, path)
+
+	bakPath := path + ".bak"
+	hasBackup := false
+
+	if _, err := os.Stat(path); err == nil {
+		_ = os.Remove(bakPath)
+		if err := os.Rename(path, bakPath); err != nil {
+			return fmt.Errorf("failed to create backup: %w", err)
+		}
+		hasBackup = true
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		if hasBackup {
+			if restoreErr := os.Rename(bakPath, path); restoreErr != nil {
+				return fmt.Errorf("failed to rename tmp to target: %v, restore failed: %w", err, restoreErr)
+			}
+		}
+		return err
+	}
+
+	if hasBackup {
+		if err := os.Remove(bakPath); err != nil {
+			fmt.Printf("warning: failed to remove backup file %s: %v\n", bakPath, err)
+		}
+	}
+
+	return nil
 }
 
 func updateSequenceNode(node *yaml.Node, values []string) {
@@ -231,56 +296,187 @@ func updateSequenceNode(node *yaml.Node, values []string) {
 	}
 }
 
-func updateMappingNode(mapping *yaml.Node, meta types.Metadata) {
-	// Simple map for fields
-	fields := map[string]string{
-		"scope":       meta.Scope,
-		"description": meta.Description,
-	}
-	
-	boolFields := map[string]bool{
-		"local_only":  meta.LocalOnly,
-	}
-
+func updateNestedMetadataNode(nested *yaml.Node, meta types.Metadata) {
+	hasScope := false
 	hasAutoInvoke := false
 
-	for i := 0; i < len(mapping.Content); i += 2 {
-		key := mapping.Content[i].Value
-		if val, ok := fields[key]; ok {
-			mapping.Content[i+1].Value = val
-			mapping.Content[i+1].Tag = "!!str"
-			delete(fields, key)
-		} else if bVal, ok := boolFields[key]; ok {
-			mapping.Content[i+1].Value = fmt.Sprintf("%v", bVal)
-			mapping.Content[i+1].Tag = "!!bool"
-			delete(boolFields, key)
+	for i := 0; i < len(nested.Content); i += 2 {
+		if i+1 >= len(nested.Content) {
+			break
+		}
+		key := nested.Content[i].Value
+		valNode := nested.Content[i+1]
+		if key == "scope" {
+			if valNode.Kind == yaml.SequenceNode {
+				var cleanParts []string
+				if meta.Scope != "" {
+					parts := strings.Split(meta.Scope, ",")
+					for _, p := range parts {
+						cleanParts = append(cleanParts, strings.TrimSpace(p))
+					}
+				}
+				updateSequenceNode(valNode, cleanParts)
+			} else {
+				valNode.Value = meta.Scope
+				valNode.Tag = "!!str"
+			}
+			hasScope = true
 		} else if key == "auto_invoke" {
-			updateSequenceNode(mapping.Content[i+1], meta.AutoInvoke)
+			if valNode.Kind == yaml.SequenceNode {
+				updateSequenceNode(valNode, meta.AutoInvoke)
+			} else {
+				if len(meta.AutoInvoke) == 1 {
+					valNode.Value = meta.AutoInvoke[0]
+					valNode.Tag = "!!str"
+				} else if len(meta.AutoInvoke) == 0 {
+					valNode.Value = "false"
+					valNode.Tag = "!!bool"
+				} else {
+					valNode.Kind = yaml.SequenceNode
+					valNode.Tag = "!!seq"
+					valNode.Value = ""
+					updateSequenceNode(valNode, meta.AutoInvoke)
+				}
+			}
 			hasAutoInvoke = true
 		}
 	}
 
-	// Add missing fields
+	if !hasScope && meta.Scope != "" {
+		nested.Content = append(nested.Content,
+			&yaml.Node{Kind: yaml.ScalarNode, Value: "scope"},
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: meta.Scope},
+		)
+	}
+	if !hasAutoInvoke && len(meta.AutoInvoke) > 0 {
+		if len(meta.AutoInvoke) == 1 {
+			nested.Content = append(nested.Content,
+				&yaml.Node{Kind: yaml.ScalarNode, Value: "auto_invoke"},
+				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: meta.AutoInvoke[0]},
+			)
+		} else {
+			seqNode := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+			updateSequenceNode(seqNode, meta.AutoInvoke)
+			nested.Content = append(nested.Content,
+				&yaml.Node{Kind: yaml.ScalarNode, Value: "auto_invoke"},
+				seqNode,
+			)
+		}
+	}
+}
+
+func updateMappingNode(mapping *yaml.Node, meta types.Metadata) {
+	var nestedMetadata *yaml.Node
+	for i := 0; i < len(mapping.Content); i += 2 {
+		if i+1 >= len(mapping.Content) {
+			break
+		}
+		if mapping.Content[i].Value == "metadata" && mapping.Content[i+1].Kind == yaml.MappingNode {
+			nestedMetadata = mapping.Content[i+1]
+			break
+		}
+	}
+
+	fields := map[string]string{
+		"description": meta.Description,
+	}
+	if nestedMetadata == nil {
+		fields["scope"] = meta.Scope
+	}
+
+	boolFields := map[string]bool{
+		"local_only": meta.LocalOnly,
+	}
+
+	hasAutoInvoke := false
+
+	if nestedMetadata != nil {
+		updateNestedMetadataNode(nestedMetadata, meta)
+	}
+
+	var newContent []*yaml.Node
+	for i := 0; i < len(mapping.Content); i += 2 {
+		if i+1 >= len(mapping.Content) {
+			break
+		}
+		key := mapping.Content[i].Value
+		valNode := mapping.Content[i+1]
+
+		if nestedMetadata != nil && (key == "scope" || key == "auto_invoke") {
+			continue
+		}
+
+		if val, ok := fields[key]; ok {
+			valNode.Value = val
+			valNode.Tag = "!!str"
+			delete(fields, key)
+		} else if bVal, ok := boolFields[key]; ok {
+			valNode.Value = fmt.Sprintf("%v", bVal)
+			valNode.Tag = "!!bool"
+			delete(boolFields, key)
+		} else if key == "scope" && nestedMetadata == nil {
+			valNode.Value = meta.Scope
+			valNode.Tag = "!!str"
+			delete(fields, "scope")
+		} else if key == "auto_invoke" && nestedMetadata == nil {
+			if valNode.Kind == yaml.SequenceNode {
+				updateSequenceNode(valNode, meta.AutoInvoke)
+			} else {
+				if len(meta.AutoInvoke) == 1 {
+					valNode.Value = meta.AutoInvoke[0]
+					valNode.Tag = "!!str"
+				} else if len(meta.AutoInvoke) == 0 {
+					valNode.Value = "false"
+					valNode.Tag = "!!bool"
+				} else {
+					valNode.Kind = yaml.SequenceNode
+					valNode.Tag = "!!seq"
+					valNode.Value = ""
+					updateSequenceNode(valNode, meta.AutoInvoke)
+				}
+			}
+			hasAutoInvoke = true
+		}
+		newContent = append(newContent, mapping.Content[i], valNode)
+	}
+	mapping.Content = newContent
+
 	for k, v := range fields {
+		if k == "scope" && nestedMetadata != nil {
+			continue
+		}
+		if v == "" {
+			continue
+		}
 		mapping.Content = append(mapping.Content,
 			&yaml.Node{Kind: yaml.ScalarNode, Value: k},
 			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: v},
 		)
 	}
 	for k, v := range boolFields {
+		if !v {
+			continue
+		}
 		mapping.Content = append(mapping.Content,
 			&yaml.Node{Kind: yaml.ScalarNode, Value: k},
 			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: fmt.Sprintf("%v", v)},
 		)
 	}
 
-	if !hasAutoInvoke {
-		seqNode := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-		updateSequenceNode(seqNode, meta.AutoInvoke)
-		mapping.Content = append(mapping.Content,
-			&yaml.Node{Kind: yaml.ScalarNode, Value: "auto_invoke"},
-			seqNode,
-		)
+	if !hasAutoInvoke && nestedMetadata == nil && len(meta.AutoInvoke) > 0 {
+		if len(meta.AutoInvoke) == 1 {
+			mapping.Content = append(mapping.Content,
+				&yaml.Node{Kind: yaml.ScalarNode, Value: "auto_invoke"},
+				&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: meta.AutoInvoke[0]},
+			)
+		} else {
+			seqNode := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+			updateSequenceNode(seqNode, meta.AutoInvoke)
+			mapping.Content = append(mapping.Content,
+				&yaml.Node{Kind: yaml.ScalarNode, Value: "auto_invoke"},
+				seqNode,
+			)
+		}
 	}
 }
 

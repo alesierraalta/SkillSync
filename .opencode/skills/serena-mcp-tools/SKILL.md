@@ -1,9 +1,9 @@
 ---
 name: serena-mcp-tools
 description: >
-  Serena MCP para navegacion semantica, edicion por simbolos y refactors con
-  bajo coste de tokens. Trigger: usar Serena MCP, buscar declaraciones,
-  referencias, implementaciones, diagnosticos o editar codigo por simbolo.
+  Serena MCP for semantic navigation, symbol-based editing, and low-token-cost
+  refactors. Trigger: using Serena MCP, searching declarations, references,
+  implementations, diagnostics, or editing code by symbol.
 metadata:
   author: a.sierra
   version: "1.2"
@@ -16,139 +16,139 @@ allowed-tools: Read, Edit, Write, Glob, Grep, Bash, Task, Serena MCP, Engram, Co
 
 ## Mission
 
-Usa Serena como capa semantica de IDE: declaraciones, simbolos, referencias, implementaciones, diagnosticos y refactors reales del lenguaje.
+Use Serena as a semantic IDE layer: declarations, symbols, references, implementations, diagnostics, and real language refactors.
 
-No lo uses como reemplazo universal de `grep`, shell, git, lectura directa o parches pequenos. Esa es la trampa: una herramienta poderosa mal usada quema tokens, tiempo y confianza.
+Do not use it as a universal replacement for `grep`, shell, git, direct reading, or small patches. That is the trap: a powerful tool misused burns tokens, time, and trust.
 
 ## Decision Gate
 
-| Pregunta | Si | No |
+| Question | Yes | No |
 | --- | --- | --- |
-| Necesito saber que significa un identificador en el lenguaje? | Serena | `grep`/lectura directa |
-| Necesito referencias reales, overrides o implementaciones? | Serena | `grep` si es texto literal |
-| El cambio depende de una clase, metodo, funcion, interfaz o tipo? | Serena | parche directo |
-| Es Markdown, JSON, YAML, TOML, `.env`, CI, Dockerfile o docs? | herramienta nativa | Serena solo si contiene codigo con simbolos |
-| Ya conozco el archivo y son 1-5 lineas locales? | parche directo | Serena si hay impacto semantico |
-| Es shell, test, build, lint, format o git? | shell nativo | no Serena |
+| Do I need to understand what an identifier means in the language? | Serena | `grep`/direct reading |
+| Do I need real references, overrides, or implementations? | Serena | `grep` if it is literal text |
+| Does the change depend on a class, method, function, interface, or type? | Serena | direct patch |
+| Is it Markdown, JSON, YAML, TOML, `.env`, CI, Dockerfile, or docs? | native tool | Serena only if it contains code with symbols |
+| Do I already know the file and it is 1-5 local lines? | direct patch | Serena if there is semantic impact |
+| Is it shell, test, build, lint, format, or git? | native shell | no Serena |
 
-Regla Gentle AI: usa Serena cuando reduce incertidumbre semantica. Si solo reduce pereza, NO.
+Gentle AI Rule: use Serena when it reduces semantic uncertainty. If it only reduces laziness, NO.
 
 ## Token Harness
 
-1. Define el objetivo semantico: simbolo, archivo probable, contenedor, firma o modulo.
-2. Mapea antes de editar: overview, symbol, declaration o references.
-3. Lee el minimo: cuerpo del simbolo antes que archivo completo.
-4. Edita por simbolo si el punto de insercion o renombre es semantico.
-5. Verifica con diff, diagnosticos y tests relevantes.
-6. Si Serena devuelve ruido, ambiguedad o cambios amplios, vuelve a `grep` + patch controlado.
+1. Define the semantic goal: symbol, probable file, container, signature, or module.
+2. Map before editing: overview, symbol, declaration, or references.
+3. Read the minimum: symbol body before the entire file.
+4. Edit by symbol if the insertion point or rename is semantic.
+5. Verify with diff, diagnostics, and relevant tests.
+6. If Serena returns noise, ambiguity, or broad changes, fall back to `grep` + controlled patch.
 
 ## Tool Routing
 
-| Necesidad | Herramienta preferida |
+| Need | Preferred Tool |
 | --- | --- |
-| Mapa top-level de archivo desconocido | `serena_get_symbols_overview` |
-| Buscar clase, funcion, metodo, tipo o interfaz | `serena_find_symbol` |
-| Saltar de uso a definicion | `serena_find_declaration` |
-| Encontrar implementaciones de abstracciones | `serena_find_implementations` |
-| Medir impacto real de un cambio | `serena_find_referencing_symbols` |
-| Insertar cerca de una entidad conocida | `serena_insert_before_symbol` / `serena_insert_after_symbol` |
-| Reemplazar una funcion/clase localizada | `serena_replace_symbol_body` |
-| Renombrar entidad real del lenguaje | `serena_rename_symbol` |
-| Revisar errores de lenguaje | `serena_get_diagnostics_for_file` |
-| Texto literal, logs, strings, rutas | `grep` / `glob` |
-| Tests, build, lint, format, git | `bash` nativo |
-| Docs o config | lectura/patch nativo |
+| Top-level map of unknown file | `serena_get_symbols_overview` |
+| Find class, function, method, type, or interface | `serena_find_symbol` |
+| Jump from use to definition | `serena_find_declaration` |
+| Find implementations of abstractions | `serena_find_implementations` |
+| Measure real impact of a change | `serena_find_referencing_symbols` |
+| Insert near a known entity | `serena_insert_before_symbol` / `serena_insert_after_symbol` |
+| Replace a localized function/class | `serena_replace_symbol_body` |
+| Rename a real language entity | `serena_rename_symbol` |
+| Review language errors | `serena_get_diagnostics_for_file` |
+| Literal text, logs, strings, paths | `grep` / `glob` |
+| Tests, build, lint, format, git | native `bash` |
+| Docs or config | native read/patch |
 
 ## Operating Harness
 
 ### Bootstrap
 
-- Llama `serena_initial_instructions` una vez por sesion si vas a usar Serena.
-- Activa el proyecto con `serena_activate_project` cuando no este claro.
-- Ejecuta `serena_check_onboarding_performed` antes de depender de conocimiento del repo.
-- Si JetBrains es backend, confirma que la raiz abierta en IDE coincide con la raiz activa de Serena.
+- Call `serena_initial_instructions` once per session if you will use Serena.
+- Activate the project with `serena_activate_project` when unclear.
+- Run `serena_check_onboarding_performed` before relying on repo knowledge.
+- If JetBrains is the backend, confirm that the IDE root opened matches the active Serena root.
 
 ### Explore
 
-- Empieza por `get_symbols_overview` en archivos candidatos.
-- Usa `find_symbol` con `max_matches` bajo cuando el nombre sea ambiguo.
-- Pide `include_body: false` hasta que necesites implementacion.
-- Usa `find_referencing_symbols` antes de tocar APIs publicas, utilidades compartidas o interfaces.
+- Start with `get_symbols_overview` on candidate files.
+- Use `find_symbol` with low `max_matches` when the name is ambiguous.
+- Request `include_body: false` until you need the implementation.
+- Use `find_referencing_symbols` before touching public APIs, shared utilities, or interfaces.
 
 ### Edit
 
-- Prefiere `rename_symbol` para renombres reales, no busqueda textual.
-- Prefiere `insert_before_symbol` o `insert_after_symbol` cuando el punto de insercion sea estable por identidad.
-- Usa `replace_symbol_body` solo despues de localizar exactamente el simbolo correcto.
-- No mezcles rename, move y cambio de comportamiento en una sola operacion.
+- Prefer `rename_symbol` for real renames, not textual search.
+- Prefer `insert_before_symbol` or `insert_after_symbol` when the insertion point is stable by identity.
+- Use `replace_symbol_body` only after exactly locating the correct symbol.
+- Do not mix rename, move, and behavior change in a single operation.
 
 ### Verify
 
-- Revisa `git diff --stat` y `git diff -- <archivos>`.
-- Ejecuta diagnosticos Serena sobre archivos editados si el backend es fiable.
-- Ejecuta tests minimos relevantes del stack.
-- Si no puedes ejecutar tests, dilo explicitamente y limita la afirmacion a diff/diagnosticos/analisis.
+- Review `git diff --stat` and `git diff -- <files>`.
+- Run Serena diagnostics on edited files if the backend is reliable.
+- Run minimal relevant tests from the stack.
+- If you cannot run tests, state it explicitly and limit the assertion to diff/diagnostics/analysis.
 
 ## Task Playbooks
 
-### Entender una funcion o clase
+### Understanding a Function or Class
 
-1. `find_symbol` para localizarla.
-2. Lee solo firma/cuerpo necesario.
-3. `find_referencing_symbols` si importa el impacto.
-4. Explica invariantes, dependencias y riesgos.
+1. Use `find_symbol` to locate it.
+2. Read only the signature/body you need.
+3. Use `find_referencing_symbols` if impact matters.
+4. Explain invariants, dependencies, and risks.
 
-### Cambiar una API publica
+### Changing a Public API
 
-1. `find_symbol` o `find_declaration` del simbolo principal.
-2. `find_referencing_symbols` para call sites.
-3. `rename_symbol` solo si es renombre puro.
-4. Edita definicion y usos en unidades pequenas.
-5. Corre diagnosticos y tests especificos.
+1. Use `find_symbol` or `find_declaration` for the main symbol.
+2. Use `find_referencing_symbols` for call sites.
+3. Use `rename_symbol` only if it is a pure rename.
+4. Edit definition and usages in small units.
+5. Run diagnostics and specific tests.
 
-### Agregar funcionalidad
+### Adding Functionality
 
-1. `get_symbols_overview` en archivos candidatos.
-2. Localiza patrones existentes con `find_symbol` y `grep` complementario.
-3. Inserta por simbolo cuando el punto sea semantico.
-4. Usa herramientas nativas para tests, snapshots, docs y config.
+1. Use `get_symbols_overview` on candidate files.
+2. Locate existing patterns with `find_symbol` and complementary `grep`.
+3. Insert by symbol when the point is semantic.
+4. Use native tools for tests, snapshots, docs, and config.
 
-### Refactor grande
+### Large Refactor
 
-1. Mapa de simbolos y referencias antes de editar.
-2. Divide por unidad semantica: clase, metodo, modulo o interfaz.
-3. Aplica una operacion semantica por vez.
-4. Verifica diff y diagnosticos entre pasos.
-5. Detente si el backend no esta indexado o los resultados no son confiables.
+1. Map symbols and references before editing.
+2. Divide by semantic unit: class, method, module, or interface.
+3. Apply one semantic operation at a time.
+4. Verify diff and diagnostics between steps.
+5. Stop if the backend is not indexed or results are unreliable.
 
 ## Stop Conditions
 
-Deten Serena y cambia de estrategia si:
+Stop Serena and change strategy if:
 
-- El simbolo no resuelve o resuelve otra entidad.
-- El resultado trae demasiado contexto irrelevante.
-- El backend/LSP no esta indexado o sus diagnosticos son dudosos.
-- La edicion toca archivos no relacionados.
-- La tarea es texto literal, configuracion, documentacion o git.
-- El cliente MCP no descubre herramientas de Serena consistentemente.
+- The symbol does not resolve or resolves another entity.
+- The result brings too much irrelevant context.
+- The backend/LSP is not indexed or its diagnostics are questionable.
+- The edit touches unrelated files.
+- The task is literal text, configuration, documentation, or git.
+- The MCP client does not discover Serena tools consistently.
 
 ## Safety Rules
 
-- No ejecutes shell via Serena si el agente ya tiene shell auditable.
-- No actives herramientas beta/opcionales salvo necesidad concreta.
-- Trata hooks, scripts, generated files y dependencias como superficie de ejecucion.
-- Mantene transportes HTTP de Serena en localhost salvo justificacion explicita.
-- Si el cliente no pide confirmacion para ejecutar herramientas, evita operaciones con escritura o shell.
+- Do not execute shell via Serena if the agent already has auditable shell.
+- Do not activate beta/optional tools unless there is concrete need.
+- Treat hooks, scripts, generated files, and dependencies as execution surfaces.
+- Keep Serena HTTP transports on localhost unless explicitly justified.
+- If the client does not ask for confirmation to execute tools, avoid write or shell operations.
 
 ## Verification Commands
 
 ```bash
 git diff --stat
-git diff -- <archivos_modificados>
+git diff -- <modified_files>
 ```
 
 ```bash
-# Ajustar al stack real.
+# Adjust to the real stack.
 npm test -- --runInBand
 pytest -q
 go test ./...
@@ -158,30 +158,30 @@ mvn test
 
 ## Agent Prompts
 
-### Navegacion
+### Navigation
 
-> Usa Serena para localizar declaracion y referencias reales de `<symbol>`. No leas archivos completos salvo que el cuerpo del simbolo sea insuficiente. Devuelve impacto por archivo y simbolo contenedor.
+> Use Serena to locate real declaration and references for `<symbol>`. Do not read entire files unless the symbol body is insufficient. Return impact by file and containing symbol.
 
 ### Refactor
 
-> Usa Serena para renombrar `<old_symbol>` a `<new_symbol>` como simbolo semantico, no como busqueda textual. Despues revisa diff, diagnosticos y tests relevantes. Si hay ambiguedad, detente antes de editar.
+> Use Serena to rename `<old_symbol>` to `<new_symbol>` as a semantic symbol, not as textual search. Then review diff, diagnostics, and relevant tests. If there is ambiguity, stop before editing.
 
-### Auditoria de impacto
+### Impact Audit
 
-> Usa Serena para encontrar implementaciones y referencias de `<symbol>`. Clasifica usos por lectura, escritura, override, llamada directa, llamada indirecta o test. No modifiques codigo.
+> Use Serena to find implementations and references for `<symbol>`. Classify uses by read, write, override, direct call, indirect call, or test. Do not modify code.
 
-### Insercion segura
+### Safe Insertion
 
-> Usa Serena para insertar el metodo/helper junto al simbolo relacionado mas cercano. No cambies imports ni call sites hasta verificar overview y referencias.
+> Use Serena to insert the method/helper next to the closest related symbol. Do not change imports or call sites until you verify overview and references.
 
 ## Source Notes
 
-- Serena aporta recuperacion, edicion, refactorizacion y diagnostico semantico a nivel de simbolos via MCP.
-- Sus herramientas pueden estar parcialmente habilitadas segun contexto/modo; no asumas disponibilidad universal.
-- Por defecto usa language servers; con JetBrains el backend se decide al iniciar y la raiz del IDE debe coincidir con la raiz Serena.
-- Los contextos `claude-code`, `codex` e `ide` estan pensados para no duplicar capacidades nativas de clientes/agentes.
-- Documentacion primaria: `https://oraios.github.io/serena/`.
+- Serena provides recovery, editing, refactoring, and semantic diagnostics at the symbol level via MCP.
+- Its tools may be partially enabled depending on context/mode; do not assume universal availability.
+- By default it uses language servers; with JetBrains the backend is decided on startup and the IDE root must match the Serena root.
+- The `claude-code`, `codex`, and `ide` contexts are designed to not duplicate native client/agent capabilities.
+- Primary documentation: `https://oraios.github.io/serena/`.
 
 ## Maintenance
 
-Revisa esta skill cuando cambien herramientas MCP, backend Serena, cliente MCP o topologia del proyecto. Mantene estable la decision central: Serena para semantica; herramientas nativas para texto, shell, git, config y parches pequenos.
+Review this skill when MCP tools, Serena backend, MCP client, or project topology change. Keep stable the central decision: Serena for semantics; native tools for text, shell, git, config, and small patches.

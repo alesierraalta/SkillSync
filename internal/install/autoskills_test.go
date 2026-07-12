@@ -32,10 +32,10 @@ func TestAutoskillsPreflight(t *testing.T) {
 			errMsg:      "Node.js >= 22.6.0 required",
 		},
 		{
-			name:        "Failure when Node is missing",
-			nodeErr:     errors.New("not found"),
-			wantErr:     true,
-			errMsg:      "Node.js not found",
+			name:    "Failure when Node is missing",
+			nodeErr: errors.New("not found"),
+			wantErr: true,
+			errMsg:  "Node.js not found",
 		},
 		{
 			name:        "Failure when npx is missing",
@@ -69,11 +69,11 @@ func TestAutoskillsPreflight(t *testing.T) {
 
 func TestAutoskillsInstall(t *testing.T) {
 	tests := []struct {
-		name       string
-		mockOutput string
-		mockErr    error
+		name        string
+		mockOutput  string
+		mockErr     error
 		wantSuccess bool
-		wantErr    bool
+		wantErr     bool
 	}{
 		{
 			name:        "Success",

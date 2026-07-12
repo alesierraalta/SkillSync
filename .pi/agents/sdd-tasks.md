@@ -1,7 +1,8 @@
 ---
 name: sdd-tasks
 description: Break SDD design/specs into implementation tasks with review workload forecast.
-model: opencode-go/qwen3.6-plus
+model: opencode-go/minimax-m3
+thinking: xhigh
 tools: read, grep, glob, write, edit
 inheritProjectContext: true
 ---

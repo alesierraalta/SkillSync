@@ -71,7 +71,7 @@ func RegenerateAfterDelete(root string) error {
 	}
 
 	// Step 8: Copy AGENTS.md → OPENCODE.md (non-fatal)
-	if _, err := opencode.CopyAgentsMD(root); err != nil {
+	if _, err := opencode.CopyAgentsMD(root, false); err != nil {
 		errs = append(errs, fmt.Errorf("step 8 copy AGENTS.md: %w", err))
 	}
 

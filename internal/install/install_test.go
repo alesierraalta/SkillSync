@@ -20,9 +20,9 @@ func TestGlobalInstallRepoCheck(t *testing.T) {
 	tmpDir := t.TempDir()
 	origDir, _ := os.Getwd()
 	defer os.Chdir(origDir)
-	
+
 	os.Chdir(tmpDir)
-	
+
 	result := GlobalInstall()
 	if result.Success {
 		t.Error("Expected GlobalInstall to fail when not in repo root")
@@ -37,11 +37,11 @@ func TestGlobalInstallRepoCheck_Success(t *testing.T) {
 	tmpDir := t.TempDir()
 	origDir, _ := os.Getwd()
 	defer os.Chdir(origDir)
-	
+
 	os.Chdir(tmpDir)
 	os.WriteFile("go.mod", []byte("module test"), 0644)
 	os.MkdirAll(filepath.Join("cmd", "synck"), 0755)
-	
+
 	// We don't want to actually run 'go install' in tests.
 	// Since GlobalInstall calls exec.Command, it's hard to mock without injecting a runner.
 	// But we can at least verify it reaches the 'go' check.

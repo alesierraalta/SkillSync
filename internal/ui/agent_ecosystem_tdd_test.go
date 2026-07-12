@@ -160,11 +160,8 @@ func TestAgentEcosystemView_DetailPanel(t *testing.T) {
 	m.selectedAgent = 1 // Gemini is selected
 
 	view := m.View()
-	if !strings.Contains(view, "fetch-server") {
-		t.Errorf("expected View() to contain MCP server name 'fetch-server', got:\n%s", view)
-	}
-	if !strings.Contains(view, "remote-server") {
-		t.Errorf("expected View() to contain MCP server name 'remote-server', got:\n%s", view)
+	if !strings.Contains(view, "2 MCP Servers") {
+		t.Errorf("expected View() to contain '2 MCP Servers', got:\n%s", view)
 	}
 }
 

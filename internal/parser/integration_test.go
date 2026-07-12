@@ -26,7 +26,7 @@ func TestCoreSkillInstallAndParse(t *testing.T) {
 			}
 
 			skillFile := filepath.Join(".agents", "skills", sk, "SKILL.md")
-			
+
 			// 1. Assert file exists and content is full
 			content, err := os.ReadFile(skillFile)
 			if err != nil {
@@ -37,8 +37,6 @@ func TestCoreSkillInstallAndParse(t *testing.T) {
 			if !strings.Contains(string(content), "description:") {
 				t.Errorf("SKILL.md for %s appears to be a stub (missing description)", sk)
 			}
-
-
 
 			// 3. Parse and assert metadata
 			parsed, err := parser.Parse(skillFile)
@@ -53,7 +51,7 @@ func TestCoreSkillInstallAndParse(t *testing.T) {
 			if parsed.Metadata.Scope == "" || parsed.Metadata.Scope == "No scope specified" {
 				t.Errorf("parsed scope is empty or default for %s", sk)
 			}
-			
+
 			// Canonical phrase check (Regression/no-stub contract)
 			canonicalPhrases := map[string]string{
 				"skill-creator": "Creates new AI agent skills following the Agent Skills spec",

@@ -14,6 +14,7 @@ import (
 func TestContentViewHeaderSyncBug(t *testing.T) {
 	m := NewModel(NewBackend(storage.NewService("")))
 	m.Screen = ScreenContentView
+	m.PrevScreen = ScreenList
 	m.Width = 100
 	m.Height = 50
 

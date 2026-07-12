@@ -4,19 +4,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"skillsync/tui/internal/diff"
 	"skillsync/tui/internal/discovery"
 	"skillsync/tui/internal/install"
 	"skillsync/tui/internal/opencode"
-	"skillsync/tui/internal/parser"
 	"skillsync/tui/internal/remove"
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/syncengine"
-	"skillsync/tui/internal/types"
 	"skillsync/tui/internal/ui"
 	"strings"
 )
@@ -165,7 +162,11 @@ func handleSync(args []string) error {
 		DryRun:     *dryRun,
 		ProgressCb: progressCb,
 	}
-	opencodeReport, err := syncOpenCodeForRoot(root, opencodeOpts)
+	plannedAgentsContent := ""
+	if *dryRun {
+		plannedAgentsContent = plannedAgentsMD(engineReport)
+	}
+	opencodeReport, err := syncOpenCodeForRootWithAgentsContent(root, opencodeOpts, plannedAgentsContent)
 	if err != nil {
 		fmt.Printf("⚠️ OpenCode sync warning: %v\n", err)
 	}
@@ -231,6 +232,10 @@ func runSyncOpenCode(root string, opts opencode.Options, nonFatal bool) error {
 
 // syncOpenCodeForRoot performs the full OpenCode sync for a given root.
 func syncOpenCodeForRoot(root string, opts opencode.Options) (*runner.SyncReport, error) {
+	return syncOpenCodeForRootWithAgentsContent(root, opts, "")
+}
+
+func syncOpenCodeForRootWithAgentsContent(root string, opts opencode.Options, agentsMDContent string) (*runner.SyncReport, error) {
 	report := &runner.SyncReport{}
 
 	// Stage 3: Mirror skills
@@ -243,13 +248,13 @@ func syncOpenCodeForRoot(root string, opts opencode.Options) (*runner.SyncReport
 	}
 	report.Changes = append(report.Changes, syncReport.Changes...)
 
-	// Stage 4: Parse mirrored skills
+	// Stage 4: Discover skills from source
 	if opts.ProgressCb != nil {
-		opts.ProgressCb("Parsing mirrored skills", 4, 8)
+		opts.ProgressCb("Discovering skills", 4, 8)
 	}
-	skills, err := parseMirroredSkills(root)
+	skills, err := syncengine.DiscoverSkills(root)
 	if err != nil {
-		return report, fmt.Errorf("parse skills: %w", err)
+		return report, fmt.Errorf("discover skills: %w", err)
 	}
 
 	// Stage 5: Ensure package.json / Regenerate tools
@@ -281,13 +286,16 @@ func syncOpenCodeForRoot(root string, opts opencode.Options) (*runner.SyncReport
 	if opts.ProgressCb != nil {
 		opts.ProgressCb("Copying AGENTS.md", 7, 8)
 	}
-	if !opts.DryRun {
-		copyReport, err := opencode.CopyAgentsMD(root)
-		if err != nil {
-			return report, fmt.Errorf("copy agents: %w", err)
-		}
-		report.Changes = append(report.Changes, copyReport.Changes...)
+	var copyReport *runner.SyncReport
+	if agentsMDContent != "" {
+		copyReport, err = opencode.CopyAgentsMDContent(root, agentsMDContent, opts.DryRun)
+	} else {
+		copyReport, err = opencode.CopyAgentsMD(root, opts.DryRun)
 	}
+	if err != nil {
+		return report, fmt.Errorf("copy agents: %w", err)
+	}
+	report.Changes = append(report.Changes, copyReport.Changes...)
 
 	// Stage 8: Regenerate commands
 	if opts.ProgressCb != nil {
@@ -302,41 +310,18 @@ func syncOpenCodeForRoot(root string, opts opencode.Options) (*runner.SyncReport
 	return report, nil
 }
 
-// parseMirroredSkills parses all mirrored skills from .opencode/skills/.
-func parseMirroredSkills(root string) ([]types.Skill, error) {
-	skillsPath := filepath.Join(root, ".opencode", "skills")
-	var skillPaths []string
-	err := filepath.WalkDir(skillsPath, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		info, err := os.Stat(path)
-		if err != nil {
-			return nil
-		}
-		if info.IsDir() {
-			skillFile := filepath.Join(path, "SKILL.md")
-			if _, err := os.Stat(skillFile); err == nil {
-				skillPaths = append(skillPaths, skillFile)
-				return filepath.SkipDir
-			}
-		}
-		return nil
-	})
-	if err != nil && !os.IsNotExist(err) {
-		return nil, err
+func plannedAgentsMD(report *runner.SyncReport) string {
+	if report == nil {
+		return ""
 	}
-
-	var skills []types.Skill
-	for _, p := range skillPaths {
-		skill, err := parser.Parse(p)
-		if err != nil {
-			continue
+	for _, change := range report.Changes {
+		if change.Path == "AGENTS.md" && change.After != "" {
+			return change.After
 		}
-		skills = append(skills, *skill)
 	}
-	return skills, nil
+	return ""
 }
+
 
 func handleCreateSkill(args []string) error {
 	if len(args) == 0 {

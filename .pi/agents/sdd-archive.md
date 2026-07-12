@@ -1,7 +1,8 @@
 ---
 name: sdd-archive
 description: Archive a verified SDD change into OpenSpec source specs.
-model: gemini-acp/gemini-3.1-flash-lite-preview
+model: opencode-go/deepseek-v4-flash
+thinking: xhigh
 tools: read, grep, glob, write, edit, bash
 inheritProjectContext: true
 ---

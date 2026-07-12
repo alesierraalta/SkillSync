@@ -16,13 +16,14 @@ type deleteSkillFinishedMsg struct {
 
 // DeleteConfirmModel handles the state for the delete confirmation dialog.
 type DeleteConfirmModel struct {
-	backend   AppService
-	skillName string
-	confirmed bool
-	deleting  bool
-	success   bool
-	localOnly bool
-	err       error
+	backend    AppService
+	skillName  string
+	globalPath string
+	confirmed  bool
+	deleting   bool
+	success    bool
+	localOnly  bool
+	err        error
 }
 
 // NewDeleteConfirmModel creates a new DeleteConfirmModel with the given backend.
@@ -64,8 +65,13 @@ func (m DeleteConfirmModel) Update(msg tea.Msg) (DeleteConfirmModel, tea.Cmd) {
 // a deleteSkillFinishedMsg with the result.
 func (m DeleteConfirmModel) deleteCmd() tea.Cmd {
 	return func() tea.Msg {
-		opts := remove.Options{Local: m.localOnly}
-		err := m.backend.RemoveSkill(m.skillName, opts)
+		var err error
+		if m.globalPath != "" {
+			err = m.backend.RemoveGlobalSkill(m.globalPath)
+		} else {
+			opts := remove.Options{Local: m.localOnly}
+			err = m.backend.RemoveSkill(m.skillName, opts)
+		}
 		return deleteSkillFinishedMsg{name: m.skillName, err: err}
 	}
 }

@@ -93,21 +93,22 @@ func RegenerateCommands(root string, skills []types.Skill, dryRun bool) (*runner
 			if content, err := os.ReadFile(path); err == nil {
 				before = string(content)
 			}
+			diffStr, summary := diff.UnifiedDiff(before, "", 50)
 			if dryRun {
 				report.Changes = append(report.Changes, runner.FileChange{
-					Path:   relPath,
-					Status: "deleted",
-					Before: before,
-					After:  "",
+					Path:    filepath.ToSlash(relPath),
+					Status:  "deleted",
+					Before:  before,
+					After:   "",
+					Diff:    diffStr,
+					Summary: summary,
 				})
-				fmt.Printf("[dry-run] would prune orphan command: %s\n", filename)
 			} else {
 				if err := os.Remove(path); err != nil {
 					return report, fmt.Errorf("remove orphan %s: %w", filename, err)
 				}
-				diffStr, summary := diff.UnifiedDiff(before, "", 50)
 				report.Changes = append(report.Changes, runner.FileChange{
-					Path:    relPath,
+					Path:    filepath.ToSlash(relPath),
 					Status:  "deleted",
 					Before:  before,
 					After:   "",
@@ -123,6 +124,7 @@ func RegenerateCommands(root string, skills []types.Skill, dryRun bool) (*runner
 
 func writeIfManaged(path string, content string, dryRun bool, root string) (*runner.FileChange, error) {
 	relPath, _ := filepath.Rel(root, path)
+	relPath = filepath.ToSlash(relPath)
 
 	if _, err := os.Stat(path); err == nil {
 		managed, err := isManagedBySkillSync(path)

@@ -29,7 +29,9 @@ type ListModel struct {
 }
 
 func NewListModel(backend AppService, rootPath string) ListModel {
-	l := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	delegate := list.NewDefaultDelegate()
+	delegate.SetHeight(4)
+	l := list.New([]list.Item{}, delegate, 0, 0)
 	l.Title = "Skillsync TUI"
 	l.KeyMap.Filter.SetEnabled(false)
 

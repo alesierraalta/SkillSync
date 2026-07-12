@@ -44,7 +44,6 @@ func DiscoverSkills(root string) ([]string, error) {
 	return skills, nil
 }
 
-
 // ScanProjects scans the provided roots for project markers.
 // Depth 1 means only the root itself and its immediate children.
 func ScanProjects(roots []string, maxDepth int) ([]string, error) {
@@ -122,5 +121,3 @@ func isProject(path string) bool {
 	}
 	return false
 }
-
-

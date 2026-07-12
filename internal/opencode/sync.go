@@ -138,23 +138,29 @@ func SyncSkills(root string, opts Options) (*runner.SyncReport, error) {
 			return report, fmt.Errorf("lstat source %s: %w", srcPath, err)
 		}
 
-		if opts.DryRun {
-			fmt.Printf("[dry-run] would mirror: %s → %s\n", srcPath, dstPath)
-			// Mark as not orphaned
-			if opts.Prune {
-				name := filepath.Base(filepath.Dir(dstPath))
-				delete(dstOrphans, name)
-			}
-			continue
-		}
-
 		// Ensure destination directory exists
 		dstDir := filepath.Dir(dstPath)
-		if err := os.MkdirAll(dstDir, 0755); err != nil {
-			return report, fmt.Errorf("mkdir %s: %w", dstDir, err)
+		if !opts.DryRun {
+			if err := os.MkdirAll(dstDir, 0755); err != nil {
+				return report, fmt.Errorf("mkdir %s: %w", dstDir, err)
+			}
 		}
 
 		if srcInfo.Mode()&os.ModeSymlink != 0 {
+			if opts.DryRun {
+				relDst, _ := filepath.Rel(root, dstPath)
+				report.Changes = append(report.Changes, runner.FileChange{
+					Path:    filepath.ToSlash(relDst),
+					Status:  "symlinked",
+					Summary: "would recreate symlink",
+				})
+				if opts.Prune {
+					name := filepath.Base(filepath.Dir(dstPath))
+					delete(dstOrphans, name)
+				}
+				continue
+			}
+
 			// Symlink: recreate as symlink
 			linkTarget, err := os.Readlink(srcPath)
 			if err != nil {
@@ -167,7 +173,7 @@ func SyncSkills(root string, opts Options) (*runner.SyncReport, error) {
 			}
 			relDst, _ := filepath.Rel(root, dstPath)
 			report.Changes = append(report.Changes, runner.FileChange{
-				Path:   relDst,
+				Path:   filepath.ToSlash(relDst),
 				Status: "symlinked",
 			})
 		} else {
@@ -186,9 +192,6 @@ func SyncSkills(root string, opts Options) (*runner.SyncReport, error) {
 				if err == nil {
 					before = string(dstContent)
 				}
-				if err := os.WriteFile(dstPath, srcContent, 0644); err != nil {
-					return report, fmt.Errorf("write %s: %w", dstPath, err)
-				}
 				after := string(srcContent)
 				diffStr, summary := diff.UnifiedDiff(before, after, 50)
 				status := "modified"
@@ -197,13 +200,18 @@ func SyncSkills(root string, opts Options) (*runner.SyncReport, error) {
 				}
 				relDst, _ := filepath.Rel(root, dstPath)
 				report.Changes = append(report.Changes, runner.FileChange{
-					Path:    relDst,
+					Path:    filepath.ToSlash(relDst),
 					Status:  status,
 					Before:  before,
 					After:   after,
 					Diff:    diffStr,
 					Summary: summary,
 				})
+				if !opts.DryRun {
+					if err := os.WriteFile(dstPath, srcContent, 0644); err != nil {
+						return report, fmt.Errorf("write %s: %w", dstPath, err)
+					}
+				}
 			}
 		}
 
@@ -217,21 +225,22 @@ func SyncSkills(root string, opts Options) (*runner.SyncReport, error) {
 	reportProgress("Mirroring skills")
 
 	// Prune orphans
-	if opts.Prune && !opts.DryRun {
+	if opts.Prune {
 		for name := range dstOrphans {
 			orphanPath := filepath.Join(dstRoot, name)
 			relOrphan, _ := filepath.Rel(root, orphanPath)
+			relOrphan = filepath.ToSlash(relOrphan)
 			report.Changes = append(report.Changes, runner.FileChange{
-				Path:   relOrphan,
-				Status: "deleted",
+				Path:    relOrphan,
+				Status:  "deleted",
+				Summary: "deleted orphan skill mirror",
 			})
+			if opts.DryRun {
+				continue
+			}
 			if err := os.RemoveAll(orphanPath); err != nil {
 				return report, fmt.Errorf("prune %s: %w", orphanPath, err)
 			}
-		}
-	} else if opts.Prune && opts.DryRun {
-		for name := range dstOrphans {
-			fmt.Printf("[dry-run] would prune: %s\n", name)
 		}
 	}
 	if opts.Prune {

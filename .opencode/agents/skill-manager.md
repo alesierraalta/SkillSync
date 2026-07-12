@@ -29,7 +29,7 @@ This agent provides skill management commands derived from the current skill inv
 | `golang-testing` | Go testing patterns including table-driven tests, subtests, benchmarks, fuzzing, and test coverage. Follows TDD methodology with idiomatic Go practices. | `synck golang-testing` |
 | `sequential-thinking` | Disciplined use of the sequential-thinking tool for complex planning, analysis, revisions, branching, verification, and knowing when NOT to use it. Trigger: complex planning, multi-step analysis, architectural revisions, or when explicit step-by-step thinking is required.
  | `synck sequential-thinking` |
-| `serena-mcp-tools` | Serena MCP para navegacion semantica, edicion por simbolos y refactors con bajo coste de tokens. Trigger: usar Serena MCP, buscar declaraciones, referencias, implementaciones, diagnosticos o editar codigo por simbolo.
+| `serena-mcp-tools` | Serena MCP for semantic navigation, symbol-based editing, and low-token-cost refactors. Trigger: using Serena MCP, searching declarations, references, implementations, diagnostics, or editing code by symbol.
  | `synck serena-mcp-tools` |
 | `skill-creator` | Creates new AI agent skills following the Agent Skills spec. Trigger: When user asks to create a new skill, add agent instructions, or document patterns for AI.
  | `synck skill-creator` |

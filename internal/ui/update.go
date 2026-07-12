@@ -3,7 +3,9 @@ package ui
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -20,6 +22,19 @@ import (
 )
 
 type skillsLoadedMsg []types.Skill
+type globalSkillsLoadedMsg struct {
+	items []globalSkillItem
+	title string
+}
+
+// globalSkillsErrorMsg is dispatched when async Global Skills discovery fails
+// (e.g. UserHomeDir error, DiscoverSkills error). Receiving it leaves the UI
+// out of the "Buscando..." loading state and shows the failure inline so the
+// user is never stuck on a spinner.
+type globalSkillsErrorMsg struct {
+	err      error
+	category string
+}
 type errorMsg error
 
 // agentEcosystemLoadedMsg is dispatched when DetectAgentEcosystem completes.
@@ -105,6 +120,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.agentEcosystemScroll = 0
 		return m, nil
 
+	case globalSkillsLoadedMsg:
+		var items []list.Item
+		for _, g := range msg.items {
+			items = append(items, g)
+		}
+		m.globalSkillsList.SetItems(items)
+		m.globalSkillsList.Title = msg.title
+		m.globalSkillsLoaded = true
+		m.globalSkillsErr = nil
+		return m, nil
+
+	case globalSkillsErrorMsg:
+		// Surface the failure inline so the user can act on it (delete the
+		// unreadable path, fix permissions, etc.) instead of being stuck on
+		// the indefinite "Buscando..." loading state.
+		m.globalSkillsList.SetItems(nil)
+		m.globalSkillsList.Title = fmt.Sprintf("Global Skills: %s (error)", msg.category)
+		m.globalSkillsLoaded = true
+		m.globalSkillsErr = msg.err
+		return m, nil
+
 	case skillsLoadedMsg:
 		newModel, cmd := m.List.Update(msg)
 		m.List = newModel.(ListModel)
@@ -129,6 +165,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		m.storageList.SetSize(m.Width-4, m.Height-8)
 		m.projectList.SetSize(m.Width-4, m.Height-8)
+		m.globalSkillsList.SetSize(m.Width-4, m.Height-8)
 
 		return m, nil
 
@@ -239,9 +276,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		updated, _ := m.deleteConfirm.Update(msg)
 		m.deleteConfirm = updated
 		if m.deleteConfirm.success {
-			m.Screen = m.PrevScreen
+			prev := m.PrevScreen
+			m.Screen = prev
 			m.StatusMsg = fmt.Sprintf("Skill '%s' deleted.", msg.name)
 			m.resetDeleteConfirm()
+
+			if prev == ScreenGlobalSkillsList {
+				m.globalSkillsLoaded = false
+				return m, m.loadGlobalSkillsCmd(m.globalCategory)
+			}
 			return m, m.loadSkills()
 		}
 		// On error, stay on confirm screen to show error
@@ -279,6 +322,16 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleDeleteConfirmKeys(msg)
 	case ScreenAgentEcosystem:
 		return m.handleAgentEcosystemKeys(msg)
+	case ScreenAgentMenu:
+		return m.handleAgentMenuKeys(msg)
+	case ScreenPluginsMenu:
+		return m.handlePluginsMenuKeys(msg)
+	case ScreenMCPServersMenu:
+		return m.handleMCPServersMenuKeys(msg)
+	case ScreenGlobalSkillsCats:
+		return m.handleGlobalSkillsCatsKeys(msg)
+	case ScreenGlobalSkillsList:
+		return m.handleGlobalSkillsListKeys(msg)
 	}
 
 	return m, nil
@@ -291,7 +344,7 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.HomeCursor--
 		}
 	case "down", "j":
-		if m.HomeCursor < 5 {
+		if m.HomeCursor < 6 {
 			m.HomeCursor++
 		}
 	case "enter", " ":
@@ -318,6 +371,10 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selectedAgent = 0
 			m.agentEcosystemScroll = 0
 			return m, m.loadAgentEcosystemCmd()
+		} else if m.HomeCursor == 6 {
+			m.Screen = ScreenGlobalSkillsCats
+			m.globalCategoryCursor = 0
+			return m, nil
 		}
 	case "1":
 		m.HomeCursor = 0
@@ -348,10 +405,183 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.selectedAgent = 0
 		m.agentEcosystemScroll = 0
 		return m, m.loadAgentEcosystemCmd()
+	case "7":
+		m.HomeCursor = 6
+		m.Screen = ScreenGlobalSkillsCats
+		m.globalCategoryCursor = 0
+		return m, nil
 	case "esc", "q":
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+// globalSkillCategories is the single source of truth for the order and
+// contents of the Global Skills category list. It is consumed by both the
+// keyboard handler (handleGlobalSkillsCatsKeys) and the view
+// (viewGlobalSkillsCats), and by categoryToProviderFolders which maps each
+// category to the provider folder(s) the filter should match against.
+//
+// New categories must be added here AND wired up in
+// categoryToProviderFolders below.
+var globalSkillCategories = []string{
+	"Claude",
+	"Antigravity",
+	"OpenCode",
+	"Qwen",
+	"All",
+	"Back",
+}
+
+func (m Model) handleGlobalSkillsCatsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	categories := globalSkillCategories
+
+	switch msg.String() {
+	case "esc", "q":
+		m.Screen = ScreenHome
+		return m, nil
+	case "up", "k":
+		if m.globalCategoryCursor > 0 {
+			m.globalCategoryCursor--
+		}
+	case "down", "j":
+		if m.globalCategoryCursor < len(categories)-1 {
+			m.globalCategoryCursor++
+		}
+	case "enter":
+		selected := categories[m.globalCategoryCursor]
+		if selected == "Back" {
+			m.Screen = ScreenHome
+			return m, nil
+		}
+		m.Screen = ScreenGlobalSkillsList
+		m.globalCategory = selected
+		m.globalSkillsLoaded = false
+		return m, m.loadGlobalSkillsCmd(selected)
+	}
+	return m, nil
+}
+
+func (m Model) handleGlobalSkillsListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		if m.globalSkillsList.FilterState() == list.Filtering || m.globalSkillsList.FilterState() == list.FilterApplied {
+			break
+		}
+		m.Screen = ScreenGlobalSkillsCats
+		return m, nil
+	case "o":
+		if m.globalSkillsList.FilterState() == list.Filtering {
+			break
+		}
+		if i, ok := m.globalSkillsList.SelectedItem().(globalSkillItem); ok {
+			err := openExplorer(i.skill.Path)
+			if err != nil {
+				m.StatusMsg = fmt.Sprintf("Error opening explorer: %v", err)
+			}
+			return m, nil
+		}
+	case "d":
+		if m.globalSkillsList.FilterState() == list.Filtering {
+			break
+		}
+		if i, ok := m.globalSkillsList.SelectedItem().(globalSkillItem); ok {
+			sk := i.skill
+			m.deleteConfirm.skillName = sk.Name
+			m.deleteConfirm.globalPath = sk.Path
+			m.PrevScreen = m.Screen
+			m.Screen = ScreenDeleteConfirm
+			return m, nil
+		}
+	case "enter", "v":
+		if m.globalSkillsList.FilterState() == list.Filtering {
+			break
+		}
+		if i, ok := m.globalSkillsList.SelectedItem().(globalSkillItem); ok {
+			sk := i.skill
+			m.selected = &sk
+
+			contentBytes, err := os.ReadFile(sk.Path)
+			if err != nil {
+				m.List.viewport.SetContent(fmt.Sprintf("Error reading file: %v", err))
+			} else {
+				m.List.viewport.SetContent(string(contentBytes))
+			}
+			m.List.viewport.GotoTop()
+
+			m.PrevScreen = m.Screen
+			m.Screen = ScreenContentView
+			return m, nil
+		}
+	}
+
+	var cmd tea.Cmd
+	m.globalSkillsList, cmd = m.globalSkillsList.Update(msg)
+	return m, cmd
+}
+
+// categoryToProviderFolders maps each Global Skills category to the set of
+// provider folder segments (path components) that satisfy the filter. Most
+// categories are a single 1:1 mapping (e.g. "Claude" -> ".claude"), but
+// "Antigravity" lives under ".gemini/antigravity" so it requires both segments.
+//
+// Keep this list in sync with the categories[] slice in
+// handleGlobalSkillsCatsKeys / viewGlobalSkillsCats.
+func categoryToProviderFolders(category string) []string {
+	switch category {
+	case "Antigravity":
+		return []string{".gemini/antigravity"}
+	case "All":
+		return nil // sentinel: no filter, include every provider
+	default:
+		return []string{"." + strings.ToLower(category)}
+	}
+}
+
+func (m Model) loadGlobalSkillsCmd(category string) tea.Cmd {
+	return func() tea.Msg {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return globalSkillsErrorMsg{err: err, category: category}
+		}
+
+		paths, err := m.backend.DiscoverSkills(homeDir)
+		if err != nil {
+			return globalSkillsErrorMsg{err: err, category: category}
+		}
+
+		providerFolders := categoryToProviderFolders(category)
+
+		var items []globalSkillItem
+		for _, p := range paths {
+			s, perr := m.backend.ParseSkill(p)
+			if perr != nil {
+				continue
+			}
+			if len(providerFolders) > 0 {
+				pathSlash := filepath.ToSlash(p)
+				matched := false
+				for _, folder := range providerFolders {
+					if strings.Contains(pathSlash, "/"+folder+"/") || strings.HasSuffix(pathSlash, "/"+folder) {
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					continue
+				}
+			}
+			items = append(items, globalSkillItem{skill: *s, category: category})
+		}
+		var displayRoot string
+		if category == "All" {
+			displayRoot = filepath.Join(homeDir, ".*", "skills")
+		} else {
+			displayRoot = filepath.Join(homeDir, "."+strings.ToLower(category), "skills")
+		}
+
+		return globalSkillsLoadedMsg{items: items, title: fmt.Sprintf("Global Skills: %s (Root: %s)", category, displayRoot)}
+	}
 }
 
 func (m Model) syncOpenCodeCmd() tea.Cmd {
@@ -409,6 +639,14 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.Screen = ScreenDeleteConfirm
 				return m, nil
 			}
+		}
+	case "o":
+		if m.List.selected != nil {
+			err := openExplorer(m.List.selected.Path)
+			if err != nil {
+				m.StatusMsg = fmt.Sprintf("Error opening explorer: %v", err)
+			}
+			return m, nil
 		}
 	case "esc":
 		m.Screen = ScreenHome
@@ -483,7 +721,7 @@ func (m Model) handleSyncingKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleContentViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc":
+	case "esc", "q":
 		m.Screen = m.PrevScreen
 		return m, nil
 	case "e":
@@ -502,9 +740,11 @@ func (m Model) handleContentViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	newModel, cmd := m.List.Update(msg)
 	m.List = newModel.(ListModel)
 
-	// Sync header if list selection changed
-	if i, ok := m.List.list.SelectedItem().(item); ok {
-		m.selected = &i.skill
+	// Sync header if list selection changed, only if we came from local list
+	if m.PrevScreen == ScreenList {
+		if i, ok := m.List.list.SelectedItem().(item); ok {
+			m.selected = &i.skill
+		}
 	}
 
 	return m, cmd
@@ -533,10 +773,11 @@ func (m Model) handleComponentUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.inputs[i], cmd = m.inputs[i].Update(msg)
 		}
 	case ScreenStorage:
-
 		m.storageList, cmd = m.storageList.Update(msg)
 	case ScreenProjects:
 		m.projectList, cmd = m.projectList.Update(msg)
+	case ScreenGlobalSkillsList:
+		m.globalSkillsList, cmd = m.globalSkillsList.Update(msg)
 	}
 	return m, cmd
 }
@@ -782,8 +1023,92 @@ func (m Model) handleAgentEcosystemKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.selectedAgent++
 		}
 	case "enter":
-		// Confirm selection: detail panel for selectedAgent is already rendered;
-		// Enter makes the intent explicit (REQ-14) without navigating away.
+		m.Screen = ScreenAgentMenu
+		m.agentMenuCursor = 0
+		return m, nil
+	case "o":
+		if m.selectedAgent >= 0 && m.selectedAgent < len(m.agentEcosystem) {
+			_ = openExplorer(m.agentEcosystem[m.selectedAgent].ConfigPath)
+		}
+	}
+	return m, nil
+}
+
+func (m Model) handleAgentMenuKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.Screen = ScreenAgentEcosystem
+		return m, nil
+	case "up", "k":
+		if m.agentMenuCursor > 0 {
+			m.agentMenuCursor--
+		}
+	case "down", "j":
+		if m.agentMenuCursor < 1 { // 0: Plugins, 1: MCP Servers
+			m.agentMenuCursor++
+		}
+	case "enter":
+		if m.agentMenuCursor == 0 {
+			m.Screen = ScreenPluginsMenu
+			m.pluginsMenuCursor = 0
+			return m, nil
+		} else if m.agentMenuCursor == 1 {
+			m.Screen = ScreenMCPServersMenu
+			m.mcpServersMenuCursor = 0
+			return m, nil
+		}
+	case "o":
+		if m.selectedAgent >= 0 && m.selectedAgent < len(m.agentEcosystem) {
+			_ = openExplorer(m.agentEcosystem[m.selectedAgent].ConfigPath)
+		}
+	}
+	return m, nil
+}
+
+func (m Model) handleMCPServersMenuKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.Screen = ScreenAgentMenu
+		return m, nil
+	case "up", "k":
+		if m.mcpServersMenuCursor > 0 {
+			m.mcpServersMenuCursor--
+		}
+	case "down", "j":
+		if len(m.agentEcosystem) > 0 {
+			agent := m.agentEcosystem[m.selectedAgent]
+			if m.mcpServersMenuCursor < len(agent.MCPServers)-1 {
+				m.mcpServersMenuCursor++
+			}
+		}
+	case "o":
+		if m.selectedAgent >= 0 && m.selectedAgent < len(m.agentEcosystem) {
+			_ = openExplorer(m.agentEcosystem[m.selectedAgent].ConfigPath)
+		}
+	}
+	return m, nil
+}
+
+func (m Model) handlePluginsMenuKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "q":
+		m.Screen = ScreenAgentMenu
+		return m, nil
+	case "up", "k":
+		if m.pluginsMenuCursor > 0 {
+			m.pluginsMenuCursor--
+		}
+	case "down", "j":
+		if len(m.agentEcosystem) > 0 {
+			agent := m.agentEcosystem[m.selectedAgent]
+			if m.pluginsMenuCursor < len(agent.Plugins)-1 {
+				m.pluginsMenuCursor++
+			}
+		}
+	case "o":
+		if m.selectedAgent >= 0 && m.selectedAgent < len(m.agentEcosystem) {
+			_ = openExplorer(m.agentEcosystem[m.selectedAgent].ConfigPath)
+		}
 	}
 	return m, nil
 }
@@ -838,4 +1163,18 @@ func (m Model) installFromStorageAndSyncCmd(stored storage.StoredSkill) tea.Cmd 
 
 func (m *Model) filterSkills(query string) {
 	m.List.filterSkills(query)
+}
+
+func openExplorer(path string) error {
+	var cmd *exec.Cmd
+	dir := filepath.Dir(path)
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("explorer", dir)
+	case "darwin":
+		cmd = exec.Command("open", dir)
+	default:
+		cmd = exec.Command("xdg-open", dir)
+	}
+	return cmd.Start()
 }

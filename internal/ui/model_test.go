@@ -11,6 +11,50 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+func TestGlobalSkillItemTitle(t *testing.T) {
+	tests := []struct {
+		name     string
+		category string
+		path     string
+		expected string
+	}{
+		{
+			name:     "All category prefixes provider",
+			category: "All",
+			path:     ".claude/skills/my-skill/SKILL.md",
+			expected: "[claude] Test Skill",
+		},
+		{
+			name:     "Specific category does not prefix",
+			category: "Claude",
+			path:     ".claude/skills/my-skill/SKILL.md",
+			expected: "Test Skill",
+		},
+		{
+			name:     "All category with unknown provider",
+			category: "All",
+			path:     "unknown/skills/my-skill/SKILL.md",
+			expected: "Test Skill",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sk := types.Skill{
+				Name: "Test Skill",
+				Path: tt.path,
+			}
+
+			it := globalSkillItem{skill: sk, category: tt.category}
+			title := it.Title()
+
+			if title != tt.expected {
+				t.Errorf("expected title %q, got %q", tt.expected, title)
+			}
+		})
+	}
+}
+
 func TestItemTitle(t *testing.T) {
 	tests := []struct {
 		name     string

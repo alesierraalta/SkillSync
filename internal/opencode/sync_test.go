@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/types"
 )
 
@@ -24,7 +25,7 @@ func ensureDir(t *testing.T, path string) {
 
 func TestSyncSkills_MirrorsFile(t *testing.T) {
 	tmp := t.TempDir()
-	
+
 	agentsDir := filepath.Join(tmp, ".agents", "skills")
 	opencodeDir := filepath.Join(tmp, ".opencode")
 	ensureDir(t, agentsDir)
@@ -60,7 +61,7 @@ func TestSyncSkills_MirrorsFile(t *testing.T) {
 
 func TestSyncSkills_SkipsUnchanged(t *testing.T) {
 	tmp := t.TempDir()
-	
+
 	agentsDir := filepath.Join(tmp, ".agents", "skills")
 	opencodeDir := filepath.Join(tmp, ".opencode")
 	ensureDir(t, agentsDir)
@@ -108,7 +109,7 @@ func TestSyncSkills_SkipsUnchanged(t *testing.T) {
 
 func TestSyncSkills_PreservesSymlink(t *testing.T) {
 	tmp := t.TempDir()
-	
+
 	agentsDir := filepath.Join(tmp, ".agents", "skills")
 	opencodeDir := filepath.Join(tmp, ".opencode")
 	ensureDir(t, agentsDir)
@@ -127,7 +128,7 @@ func TestSyncSkills_PreservesSymlink(t *testing.T) {
 	barSrcDir := filepath.Join(agentsDir, "bar")
 	ensureDir(t, barSrcDir)
 	barSrc := filepath.Join(barSrcDir, "SKILL.md")
-	
+
 	// Create the symlink - on Windows we need to use the actual resolved path
 	// because relative symlinks can be tricky with EvalSymlinks
 	linkTarget := targetFile // absolute path to target
@@ -165,7 +166,7 @@ func TestSyncSkills_PreservesSymlink(t *testing.T) {
 
 func TestSyncSkills_CreatesMissingDir(t *testing.T) {
 	tmp := t.TempDir()
-	
+
 	agentsDir := filepath.Join(tmp, ".agents", "skills")
 	opencodeDir := filepath.Join(tmp, ".opencode")
 	ensureDir(t, agentsDir)
@@ -195,7 +196,7 @@ func TestSyncSkills_CreatesMissingDir(t *testing.T) {
 
 func TestSyncSkills_PruneRemovesOrphans(t *testing.T) {
 	tmp := t.TempDir()
-	
+
 	agentsDir := filepath.Join(tmp, ".agents", "skills")
 	opencodeSkillsDir := filepath.Join(tmp, ".opencode", "skills")
 	ensureDir(t, agentsDir)
@@ -237,7 +238,7 @@ func TestSyncSkills_PruneRemovesOrphans(t *testing.T) {
 
 func TestSyncSkills_DryRunReportsNoWrite(t *testing.T) {
 	tmp := t.TempDir()
-	
+
 	agentsDir := filepath.Join(tmp, ".agents", "skills")
 	opencodeDir := filepath.Join(tmp, ".opencode")
 	ensureDir(t, agentsDir)
@@ -251,12 +252,53 @@ func TestSyncSkills_DryRunReportsNoWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _ = SyncSkills(tmp, Options{DryRun: true})
+	report, err := SyncSkills(tmp, Options{DryRun: true})
+	if err != nil {
+		t.Fatalf("SyncSkills dry-run failed: %v", err)
+	}
 
 	fooDest := filepath.Join(tmp, ".opencode", "skills", "foo", "SKILL.md")
 	if _, err := os.Stat(fooDest); !os.IsNotExist(err) {
 		t.Error("dry-run should not write files")
 	}
+	assertReportHasChange(t, report, ".opencode/skills/foo/SKILL.md", "created")
+}
+
+func TestSyncSkills_DryRunReportsModifyAndDeleteWithoutWriting(t *testing.T) {
+	tmp := t.TempDir()
+	agentsDir := filepath.Join(tmp, ".agents", "skills")
+	opencodeSkillsDir := filepath.Join(tmp, ".opencode", "skills")
+	ensureDir(t, filepath.Join(agentsDir, "foo"))
+	ensureDir(t, filepath.Join(opencodeSkillsDir, "foo"))
+	ensureDir(t, filepath.Join(opencodeSkillsDir, "orphan"))
+
+	fooSrc := filepath.Join(agentsDir, "foo", "SKILL.md")
+	fooDest := filepath.Join(opencodeSkillsDir, "foo", "SKILL.md")
+	orphanDest := filepath.Join(opencodeSkillsDir, "orphan", "SKILL.md")
+	if err := os.WriteFile(fooSrc, []byte("name: foo\nnew: true\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fooDest, []byte("name: foo\nold: true\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(orphanDest, []byte("name: orphan\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := SyncSkills(tmp, Options{DryRun: true, Prune: true})
+	if err != nil {
+		t.Fatalf("SyncSkills dry-run failed: %v", err)
+	}
+
+	fooContent, _ := os.ReadFile(fooDest)
+	if string(fooContent) != "name: foo\nold: true\n" {
+		t.Fatal("dry-run should not modify mirrored skill")
+	}
+	if _, err := os.Stat(filepath.Join(opencodeSkillsDir, "orphan")); err != nil {
+		t.Fatalf("dry-run should not delete orphan skill: %v", err)
+	}
+	assertReportHasChange(t, report, ".opencode/skills/foo/SKILL.md", "modified")
+	assertReportHasChange(t, report, ".opencode/skills/orphan", "deleted")
 }
 
 func TestSyncSkills_InvokesProgressCallback(t *testing.T) {
@@ -411,7 +453,7 @@ func TestRegenerateTools_DryRun(t *testing.T) {
 		{Name: "foo", Metadata: types.Metadata{AutoInvoke: []string{"foo"}}},
 	}
 
-	_, err := RegenerateTools(tmp, skills, true)
+	report, err := RegenerateTools(tmp, skills, true)
 	if err != nil {
 		t.Fatalf("RegenerateTools dry-run failed: %v", err)
 	}
@@ -420,6 +462,7 @@ func TestRegenerateTools_DryRun(t *testing.T) {
 	if string(newContent) != string(originalContent) {
 		t.Error("dry-run should not modify package.json")
 	}
+	assertReportHasChange(t, report, ".opencode/package.json", "modified")
 }
 
 // ----------------------------------------------------------------
@@ -468,7 +511,7 @@ func TestRegenerateAgent_DryRun(t *testing.T) {
 		{Name: "foo", Metadata: types.Metadata{Description: "Foo"}},
 	}
 
-	_, err := RegenerateAgent(tmp, skills, true)
+	report, err := RegenerateAgent(tmp, skills, true)
 	if err != nil {
 		t.Fatalf("RegenerateAgent dry-run failed: %v", err)
 	}
@@ -476,6 +519,30 @@ func TestRegenerateAgent_DryRun(t *testing.T) {
 	if _, err := os.Stat(agentPath); !os.IsNotExist(err) {
 		t.Error("dry-run should not create skill-manager.md")
 	}
+	assertReportHasChange(t, report, ".opencode/agents/skill-manager.md", "created")
+}
+
+func TestCopyAgentsMD_DryRunReportsNoWrite(t *testing.T) {
+	tmp := t.TempDir()
+	agentsPath := filepath.Join(tmp, "AGENTS.md")
+	opencodePath := filepath.Join(tmp, "OPENCODE.md")
+	if err := os.WriteFile(agentsPath, []byte("new agents\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(opencodePath, []byte("old opencode\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := CopyAgentsMD(tmp, true)
+	if err != nil {
+		t.Fatalf("CopyAgentsMD dry-run failed: %v", err)
+	}
+
+	content, _ := os.ReadFile(opencodePath)
+	if string(content) != "old opencode\n" {
+		t.Fatal("dry-run should not write OPENCODE.md")
+	}
+	assertReportHasChange(t, report, "OPENCODE.md", "modified")
 }
 
 // ----------------------------------------------------------------
@@ -492,7 +559,7 @@ func TestCopyAgentsMD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := CopyAgentsMD(tmp)
+	_, err := CopyAgentsMD(tmp, false)
 	if err != nil {
 		t.Fatalf("CopyAgentsMD failed: %v", err)
 	}
@@ -510,7 +577,7 @@ func TestCopyAgentsMD(t *testing.T) {
 
 func TestSyncOpencode_FullSync(t *testing.T) {
 	tmp := t.TempDir()
-	
+
 	agentsDir := filepath.Join(tmp, ".agents", "skills")
 	opencodeDir := filepath.Join(tmp, ".opencode")
 	ensureDir(t, agentsDir)
@@ -541,7 +608,7 @@ func TestSyncOpencode_FullSync(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RegenerateAgent failed: %v", err)
 	}
-	_, err = CopyAgentsMD(tmp)
+	_, err = CopyAgentsMD(tmp, false)
 	if err != nil {
 		t.Fatalf("CopyAgentsMD failed: %v", err)
 	}
@@ -579,7 +646,7 @@ func TestSyncOpencode_FullSync(t *testing.T) {
 
 func TestSyncOpencode_Idempotent(t *testing.T) {
 	tmp := t.TempDir()
-	
+
 	agentsDir := filepath.Join(tmp, ".agents", "skills")
 	opencodeDir := filepath.Join(tmp, ".opencode")
 	ensureDir(t, agentsDir)
@@ -598,7 +665,7 @@ func TestSyncOpencode_Idempotent(t *testing.T) {
 	_, _ = SyncSkills(tmp, Options{})
 	RegenerateTools(tmp, skills, false)
 	_, _ = RegenerateAgent(tmp, skills, false)
-	_, _ = CopyAgentsMD(tmp)
+	_, _ = CopyAgentsMD(tmp, false)
 
 	fooDest := filepath.Join(tmp, ".opencode", "skills", "foo", "SKILL.md")
 	stat1, err := os.Stat(fooDest)
@@ -610,7 +677,7 @@ func TestSyncOpencode_Idempotent(t *testing.T) {
 	_, _ = SyncSkills(tmp, Options{})
 	RegenerateTools(tmp, skills, false)
 	_, _ = RegenerateAgent(tmp, skills, false)
-	_, _ = CopyAgentsMD(tmp)
+	_, _ = CopyAgentsMD(tmp, false)
 
 	stat2, err := os.Stat(fooDest)
 	if err != nil {
@@ -629,7 +696,7 @@ func TestSyncOpencode_Idempotent(t *testing.T) {
 
 func TestSyncOpencode_RemovedSkill(t *testing.T) {
 	tmp := t.TempDir()
-	
+
 	agentsDir := filepath.Join(tmp, ".agents", "skills")
 	opencodeDir := filepath.Join(tmp, ".opencode")
 	ensureDir(t, agentsDir)
@@ -686,4 +753,17 @@ func initPackageJSON(t *testing.T, tmp string) {
 		t.Fatal(err)
 	}
 	os.WriteFile(pkgPath, data, 0644)
+}
+
+func assertReportHasChange(t *testing.T, report *runner.SyncReport, path, status string) {
+	t.Helper()
+	for _, change := range report.Changes {
+		if change.Path == path && change.Status == status {
+			if status != "deleted" && change.Diff == "" {
+				t.Fatalf("change %s %s has empty diff", path, status)
+			}
+			return
+		}
+	}
+	t.Fatalf("expected report change %s %s, got %#v", path, status, report.Changes)
 }

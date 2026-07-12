@@ -2,16 +2,16 @@
 name: skill-sync
 description: >
   Syncs skill metadata to AGENTS.md Auto-invoke sections.
-  Trigger: When updating skill metadata (metadata.scope/metadata.auto_invoke), regenerating Auto-invoke tables, or running synck sync.
+  Trigger: When updating skill metadata (metadata.scope/metadata.auto_invoke), regenerating Auto-invoke tables, or running ./.agents/skills/skill-sync/assets/sync.sh (including --dry-run/--scope).
 metadata:
   author: a.sierra
   version: '1.0'
   scope: [root]
   auto_invoke:
     - 'After creating/modifying a skill'
-    - 'Regenerate AGENTS.md Auto-invoke tables (synck sync)'
+    - 'Regenerate AGENTS.md Auto-invoke tables (sync.sh)'
     - 'Troubleshoot why a skill is missing from AGENTS.md auto-invoke'
-allowed-tools: Read, Edit, Write, Glob, Grep
+allowed-tools: Read, Edit, Write, Glob, Grep, Bash
 ---
 
 # Skill sync
@@ -58,12 +58,12 @@ Skills can have multiple scopes: `scope: [api, common]`. All scopes currently up
 ### After Creating/Modifying a Skill
 
 ```bash
-synck sync
+./.agents/skills/skill-sync/assets/sync.sh
 ```
 
 ### What It Does
 
-1. Reads all `.agent/skills/*/SKILL.md` files
+1. Reads all `.agents/skills/*/SKILL.md` files
 2. Extracts `metadata.scope` and `metadata.auto_invoke`
 3. Generates Auto-invoke tables for each AGENTS.md
 4. Updates the `### Auto-invoke Skills` section in each file
@@ -75,7 +75,7 @@ synck sync
 Given this skill metadata:
 
 ```yaml
-# .agent/skills/myapp-ui/SKILL.md
+# .agents/skills/myapp-ui/SKILL.md
 metadata:
   version: '1.0'
   scope: [ui]
@@ -100,13 +100,13 @@ When performing these actions, ALWAYS invoke the corresponding skill FIRST:
 
 ```bash
 # Sync all AGENTS.md files
-synck sync
+./.agents/skills/skill-sync/assets/sync.sh
 
 # Dry run (show what would change)
-synck sync --dry-run
+./.agents/skills/skill-sync/assets/sync.sh --dry-run
 
 # Sync specific scope only
-synck sync --scope ui
+./.agents/skills/skill-sync/assets/sync.sh --scope ui
 ```
 
 ---
@@ -115,5 +115,5 @@ synck sync --scope ui
 
 - [ ] Added `metadata.scope` to new/modified skill
 - [ ] Added `metadata.auto_invoke` with action description
-- [ ] Ran `synck sync`
+- [ ] Ran `./.agents/skills/skill-sync/assets/sync.sh`
 - [ ] Verified AGENTS.md files updated correctly

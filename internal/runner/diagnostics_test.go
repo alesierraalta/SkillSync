@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-func TestExecuteSync_FileNotFound(t *testing.T) {
+func TestExecuteLegacyScriptSync_FileNotFound(t *testing.T) {
 	// Use a path that definitely does not exist
-	runner := NewRunner("non_existent_script_12345.sh")
+	runner := NewLegacyScriptRunner("non_existent_script_12345.sh")
 	ctx := context.Background()
 
-	ch := runner.ExecuteSync(ctx, nil)
+	ch := runner.ExecuteLegacyScriptSync(ctx, nil)
 	result := <-ch
 
 	if result.ExitCode == 0 {
@@ -29,7 +29,7 @@ func TestExecuteSync_FileNotFound(t *testing.T) {
 	}
 }
 
-func TestExecuteSync_CommandFailure(t *testing.T) {
+func TestExecuteLegacyScriptSync_CommandFailure(t *testing.T) {
 	tmpDir := t.TempDir()
 	// Create a file that exists but will fail to execute as a shell script
 	mockFile := tmpDir + "/test_fail.sh"
@@ -38,10 +38,10 @@ func TestExecuteSync_CommandFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runner := NewRunner(mockFile)
+	runner := NewLegacyScriptRunner(mockFile)
 	ctx := context.Background()
 
-	ch := runner.ExecuteSync(ctx, nil)
+	ch := runner.ExecuteLegacyScriptSync(ctx, nil)
 	result := <-ch
 
 	// If it fails with Exit 1 and empty output, we want to see if we can improve diagnostics
@@ -59,9 +59,7 @@ func TestExecuteSync_CommandFailure(t *testing.T) {
 	}
 }
 
-func TestExecuteSync_MockCommandNotFound(t *testing.T) {
+func TestExecuteLegacyScriptSync_MockCommandNotFound(t *testing.T) {
 	// Simulate an executable that doesn't exist
 	// (Skipping implementation as it's hard to trigger consistently)
 }
-
-
