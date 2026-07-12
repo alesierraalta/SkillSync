@@ -35,6 +35,7 @@ type MockAppService struct {
 	EnsureAgentsMDFunc            func(root string) error
 	RemoveSkillFunc               func(name string, opts remove.Options) error
 	DetectAgentEcosystemFunc      func() ([]agentdetect.AgentInfo, error)
+	RemoveGlobalSkillFunc         func(path string) error
 }
 
 func (m *MockAppService) DiscoverSkills(rootPath string) ([]string, error) {
@@ -125,6 +126,13 @@ func (m *MockAppService) DetectAgentEcosystem() ([]agentdetect.AgentInfo, error)
 		return m.DetectAgentEcosystemFunc()
 	}
 	return nil, nil
+}
+
+func (m *MockAppService) RemoveGlobalSkill(path string) error {
+	if m.RemoveGlobalSkillFunc != nil {
+		return m.RemoveGlobalSkillFunc(path)
+	}
+	return nil
 }
 
 func TestMockAppService_InterfaceCompliance(t *testing.T) {

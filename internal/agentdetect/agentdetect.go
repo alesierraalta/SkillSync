@@ -27,6 +27,7 @@ type MCPServer struct {
 	Command   string
 	Args      []string
 	Transport string // "stdio" or "http" (sse folds into http)
+	Enabled   bool
 }
 
 // Plugin describes a plugin/extension registered in an agent's config.

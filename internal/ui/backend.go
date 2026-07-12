@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -41,6 +42,7 @@ type AppService interface {
 	EnsureAgentsMD(root string) error
 
 	RemoveSkill(name string, opts remove.Options) error
+	RemoveGlobalSkill(path string) error
 
 	// DetectAgentEcosystem returns a read-only inventory of installed AI agent tools.
 	DetectAgentEcosystem() ([]agentdetect.AgentInfo, error)
@@ -353,4 +355,12 @@ func (b *Backend) EnsureAgentsMD(root string) error {
 		return os.WriteFile(agentsFile, content, 0644)
 	}
 	return nil
+}
+
+func (b *Backend) RemoveGlobalSkill(path string) error {
+	if filepath.Base(path) != "SKILL.md" {
+		return fmt.Errorf("invalid skill path: %s", path)
+	}
+	dir := filepath.Dir(path)
+	return os.RemoveAll(dir)
 }

@@ -49,15 +49,15 @@ func TestHomeEnter_Cursor5_TransitionsToAgentEcosystem(t *testing.T) {
 
 // ─── Guard: cursor stops at 5 ─────────────────────────────────────────────────
 
-func TestHomeGuard_AllowsCursor5(t *testing.T) {
+func TestHomeGuard_AllowsCursor6(t *testing.T) {
 	m := newTestModel(t)
-	// Press "down" 10 times — should stop at 5 (not 4 as before the guard change)
+	// Press "down" 10 times — should stop at 6
 	for i := 0; i < 10; i++ {
 		newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
 		m = newModel.(Model)
 	}
-	if m.HomeCursor != 5 {
-		t.Errorf("HomeCursor after 10 downs: got %d, want 5", m.HomeCursor)
+	if m.HomeCursor != 6 {
+		t.Errorf("HomeCursor after 10 downs: got %d, want 6", m.HomeCursor)
 	}
 }
 
@@ -170,14 +170,7 @@ func TestIntegration_AgentEcosystem_EndToEnd_FullView(t *testing.T) {
 			t.Fatalf("selectedAgent after j/j/k: got %d, want 1", m.selectedAgent)
 		}
 
-		// Enter is a no-op for screen change in the Agent Eco flow.
-		newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-		m = newM.(Model)
-		if m.Screen != ScreenAgentEcosystem {
-			t.Errorf("Screen after enter: got %v, want ScreenAgentEcosystem", m.Screen)
-		}
-
-		// Render and assert content.
+		// Render and assert content before entering the menu.
 		view := m.View()
 
 		// (1) Banner — REQ-LY-1
@@ -206,9 +199,16 @@ func TestIntegration_AgentEcosystem_EndToEnd_FullView(t *testing.T) {
 				ansiSelectedRow, opencodeLine)
 		}
 
-		// (4) Selected agent's MCP server name appears in the card body.
-		if !strings.Contains(view, "synck-tools") {
-			t.Errorf("expected view to contain MCP server 'synck-tools', got:\n%s", view)
+		// (4) Selected agent's MCP servers count appears in the card body.
+		if !strings.Contains(view, "1 MCP Servers") {
+			t.Errorf("expected view to contain '1 MCP Servers', got:\n%s", view)
+		}
+
+		// Enter transitions to ScreenAgentMenu.
+		newM, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+		m = newM.(Model)
+		if m.Screen != ScreenAgentMenu {
+			t.Errorf("Screen after enter: got %v, want ScreenAgentMenu", m.Screen)
 		}
 	})
 }

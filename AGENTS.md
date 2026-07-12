@@ -31,7 +31,7 @@ When performing these actions, ALWAYS invoke the corresponding skill FIRST:
 | Creating new skills                 | `skill-creator` |
 | Creating or updating test-prompt-scope workflows | `test-prompt-scope` |
 | GitHub PR preparation               | `git-github-branches` |
-| Regenerate AGENTS.md Auto-invoke tables (synck sync) | `skill-sync` |
+| Regenerate AGENTS.md Auto-invoke tables (sync.sh) | `skill-sync` |
 | Searching external documentation    | `context7` |
 | Searching for or installing new agent skills | `find-skills` |
 | Troubleshoot why a skill is missing from AGENTS.md auto-invoke | `skill-sync` |

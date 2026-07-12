@@ -210,11 +210,40 @@ func TestAgentEcosystemView_BannerAndCardBorders(t *testing.T) {
 		m.selectedAgent = 1
 
 		view := m.agentEcosystemView()
-		if !strings.Contains(view, "synck-bridge") {
-			t.Errorf("expected plugin name 'synck-bridge' in render, got:\n%s", view)
+		if !strings.Contains(view, "1 Plugins") {
+			t.Errorf("expected summary count '1 Plugins' in render, got:\n%s", view)
 		}
-		if !strings.Contains(view, "Plugins") {
-			t.Errorf("expected 'Plugins' subsection title in render, got:\n%s", view)
+	})
+}
+
+func TestAgentEcosystemView_Menus(t *testing.T) {
+	t.Run("agent_menu", func(t *testing.T) {
+		m := NewModel(NewBackend(storage.NewService("")))
+		m.Screen = ScreenAgentMenu
+		m.agentEcosystem = newBannerBorderAgents()
+		m.selectedAgent = 1
+
+		view := m.agentMenuView()
+		if !strings.Contains(view, "Agent Menu: opencode") {
+			t.Errorf("expected title in render, got:\n%s", view)
+		}
+		if !strings.Contains(view, "Plugins (1)") {
+			t.Errorf("expected Plugins (1) in render, got:\n%s", view)
+		}
+	})
+
+	t.Run("plugins_menu", func(t *testing.T) {
+		m := NewModel(NewBackend(storage.NewService("")))
+		m.Screen = ScreenPluginsMenu
+		m.agentEcosystem = newBannerBorderAgents()
+		m.selectedAgent = 1
+
+		view := m.pluginsMenuView()
+		if !strings.Contains(view, "Plugins for opencode") {
+			t.Errorf("expected title in render, got:\n%s", view)
+		}
+		if !strings.Contains(view, "synck-bridge") {
+			t.Errorf("expected plugin name in render, got:\n%s", view)
 		}
 	})
 }

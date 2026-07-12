@@ -21,6 +21,8 @@ func TestViewGolden(t *testing.T) {
 		{"detail", ScreenDetail},
 		{"syncing", ScreenSyncing},
 		{"content", ScreenContentView},
+		{"global_cats", ScreenGlobalSkillsCats},
+		{"global_list", ScreenGlobalSkillsList},
 	}
 
 	for _, tt := range tests {
@@ -60,6 +62,17 @@ func TestViewGolden(t *testing.T) {
 				m.List.updatePreview()
 				m.selected = m.List.selected
 			}
+			if tt.screen == ScreenGlobalSkillsList {
+				m.globalSkillsList.SetItems([]list.Item{
+					globalSkillItem{
+						skill: types.Skill{
+							Name: "Global Skill 1",
+						},
+						category: "Claude",
+					},
+				})
+				m.globalSkillsLoaded = true
+			}
 
 			output := m.View()
 			golden := filepath.Join("testdata", tt.name+".golden")
@@ -93,6 +106,16 @@ func TestHomeView_ContainsSyncOption(t *testing.T) {
 	view := m.View()
 	if !strings.Contains(view, "4. Sincronizar con OpenCode") {
 		t.Errorf("home view missing sync option, got:\n%s", view)
+	}
+}
+
+func TestHomeView_ContainsGlobalSkillsOption(t *testing.T) {
+	m := Model{
+		Screen: ScreenHome,
+	}
+	view := m.View()
+	if !strings.Contains(view, "7. Global Skills") {
+		t.Errorf("home view missing global skills option, got:\n%s", view)
 	}
 }
 

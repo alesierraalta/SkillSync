@@ -1,5 +1,4 @@
-
-    #!/usr/bin/env bash
+#!/usr/bin/env bash
 # Sync skill metadata to AGENTS.md Auto-invoke sections
 # Usage: ./sync.sh [--dry-run] [--scope <scope>]
 
@@ -145,12 +144,16 @@ extract_metadata() {
                 # Stop when leaving metadata block
                 if (!in_frontmatter) break
                 if (!in_metadata) break
+                # Frontmatter closer must terminate the list (else the closing
+                # `---` line is treated as a list item that yields "--" after
+                # the prefix-stripping below — see find-skills regression).
+                if ($0 ~ /^---[[:space:]]*$/) break
                 if ($0 ~ /^[a-z]/ && $0 !~ /^[[:space:]]/) break
 
                 # On multi-line list, only accept "- item" lines. Anything else ends the list.
                 line = $0
-                if (line ~ /^[[:space:]]*-[[:space:]]*/) {
-                    sub(/^[[:space:]]*-[[:space:]]*/, "", line)
+                if (line ~ /^[[:space:]]*-[[:space:]]+/) {
+                    sub(/^[[:space:]]*-[[:space:]]+/, "", line)
                     line = trim(line)
                     gsub(/^["'\'']|["'\'']$/, "", line)
                     if (line != "") {
@@ -254,12 +257,14 @@ When performing these actions, ALWAYS invoke the corresponding skill FIRST:
         done
     done
 
-    # Deterministic row order: Action then Skill
+    # Deterministic row order: Action then Skill. -u dedupes (action, skill)
+    # pairs so the same skill mirrored across .agents/.claude/.opencode/.qwen
+    # providers does not produce duplicate rows.
     while IFS=$'\t' read -r action skill_name; do
         [ -z "$action" ] && continue
         auto_invoke_section="$auto_invoke_section
 | $action | \`$skill_name\` |"
-    done < <(printf "%s\n" "${rows[@]}" | LC_ALL=C sort -t $'\t' -k1,1 -k2,2)
+    done < <(printf "%s\n" "${rows[@]}" | LC_ALL=C sort -u -t $'\t' -k1,1 -k2,2)
 
     if $DRY_RUN; then
         echo -e "${YELLOW}[DRY RUN] Would update $agents_path with:${NC}"

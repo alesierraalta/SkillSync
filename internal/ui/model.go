@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/muesli/reflow/wordwrap"
+
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -38,6 +40,11 @@ const (
 	ScreenDeleteConfirm
 	ScreenLicenseDisclosure
 	ScreenAgentEcosystem
+	ScreenAgentMenu
+	ScreenPluginsMenu
+	ScreenMCPServersMenu
+	ScreenGlobalSkillsCats
+	ScreenGlobalSkillsList
 )
 
 type Model struct {
@@ -78,6 +85,56 @@ type Model struct {
 	agentEcosystem       []agentdetect.AgentInfo
 	selectedAgent        int
 	agentEcosystemScroll int
+	agentMenuCursor      int
+	pluginsMenuCursor    int
+	mcpServersMenuCursor int
+
+	// Global Skills State
+	globalSkillsList     list.Model
+	globalCategory       string
+	globalCategoryCursor int
+	globalSkillsLoaded   bool
+	globalSkillsErr      error
+}
+
+type globalSkillItem struct {
+	skill    types.Skill
+	category string
+}
+
+func (i globalSkillItem) Title() string {
+	if i.category == "All" {
+		path := filepath.ToSlash(i.skill.Path)
+		segments := strings.Split(path, "/")
+
+		flag := ""
+		for _, segment := range segments {
+			switch segment {
+			case ".opencode", ".claude", ".gemini", ".cursor", ".copilot", ".agents":
+				flag = "[" + strings.TrimPrefix(segment, ".") + "]"
+				break
+			}
+			if flag != "" {
+				break
+			}
+		}
+
+		if flag != "" {
+			return fmt.Sprintf("%s %s", flag, i.skill.Name)
+		}
+	}
+	return i.skill.Name
+}
+func (i globalSkillItem) Description() string {
+	desc := i.skill.Metadata.Description
+	if desc == "" {
+		desc = "Sin descripción"
+	}
+	wrapped := wordwrap.String(desc, 70)
+	return fmt.Sprintf("Path: %s\n%s", i.skill.Path, wrapped)
+}
+func (i globalSkillItem) FilterValue() string {
+	return i.skill.Name
 }
 
 type item struct {
@@ -134,7 +191,13 @@ func (i item) Title() string {
 	}
 	return fmt.Sprintf("%s %s", i.skill.Name, flag)
 }
-func (i item) Description() string { return i.skill.Metadata.Description }
+func (i item) Description() string {
+	desc := i.skill.Metadata.Description
+	if desc == "" {
+		desc = "Sin descripción"
+	}
+	return wordwrap.String(desc, 70)
+}
 func (i item) FilterValue() string { return i.skill.Name }
 
 func NewModel(backend AppService) Model {
@@ -144,17 +207,23 @@ func NewModel(backend AppService) Model {
 	pl := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	pl.Title = "Proyectos Sincronizados"
 
+	glDelegate := list.NewDefaultDelegate()
+	glDelegate.SetHeight(5)
+	gl := list.New([]list.Item{}, glDelegate, 0, 0)
+	gl.Title = "Global Skills"
+
 	return Model{
-		Screen:        ScreenHome,
-		PrevScreen:    ScreenHome,
-		storageList:   sl,
-		projectList:   pl,
-		rootPath:      ".",
-		Progress:      progress.New(progress.WithDefaultGradient()),
-		Installer:     NewInstallerModel(backend, "."),
-		List:          NewListModel(backend, "."),
-		deleteConfirm: NewDeleteConfirmModel(backend),
-		backend:       backend,
+		Screen:           ScreenHome,
+		PrevScreen:       ScreenHome,
+		storageList:      sl,
+		projectList:      pl,
+		globalSkillsList: gl,
+		rootPath:         ".",
+		Progress:         progress.New(progress.WithDefaultGradient()),
+		Installer:        NewInstallerModel(backend, "."),
+		List:             NewListModel(backend, "."),
+		deleteConfirm:    NewDeleteConfirmModel(backend),
+		backend:          backend,
 	}
 }
 
@@ -174,6 +243,7 @@ func (m Model) GetKeyBindings() []KeyBinding {
 			{Key: "s", Help: "save globally"},
 			{Key: "y", Help: "sync"},
 			{Key: "d", Help: "delete skill"},
+			{Key: "o", Help: "open folder"},
 		}
 	case ScreenDetail:
 		return []KeyBinding{
@@ -214,9 +284,42 @@ func (m Model) GetKeyBindings() []KeyBinding {
 	case ScreenAgentEcosystem:
 		return []KeyBinding{
 			{Key: "esc/q", Help: "back"},
-			{Key: "up/down", Help: "select agent"},
+			{Key: "up/down", Help: "navigate"},
 			{Key: "j/k", Help: "scroll"},
 			{Key: "enter", Help: "select"},
+			{Key: "o", Help: "open dir"},
+		}
+	case ScreenAgentMenu:
+		return []KeyBinding{
+			{Key: "esc/q", Help: "back"},
+			{Key: "up/down", Help: "navigate"},
+			{Key: "enter", Help: "select"},
+			{Key: "o", Help: "open dir"},
+		}
+	case ScreenPluginsMenu:
+		return []KeyBinding{
+			{Key: "esc/q", Help: "back"},
+			{Key: "up/down", Help: "navigate"},
+			{Key: "o", Help: "open dir"},
+		}
+	case ScreenMCPServersMenu:
+		return []KeyBinding{
+			{Key: "esc/q", Help: "back"},
+			{Key: "up/down", Help: "navigate"},
+			{Key: "o", Help: "open dir"},
+		}
+	case ScreenGlobalSkillsCats:
+		return []KeyBinding{
+			{Key: "esc/q", Help: "back"},
+			{Key: "up/down", Help: "navigate"},
+			{Key: "enter", Help: "select"},
+		}
+	case ScreenGlobalSkillsList:
+		return []KeyBinding{
+			{Key: "esc/q", Help: "back"},
+			{Key: "enter", Help: "preview"},
+			{Key: "d", Help: "delete skill"},
+			{Key: "o", Help: "open folder"},
 		}
 	default:
 		return []KeyBinding{

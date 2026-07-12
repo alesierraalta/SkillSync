@@ -12,6 +12,11 @@ This agent provides skill management commands derived from the current skill inv
 
 | Skill | Description | Command |
 |-------|-------------|--------|
+| `skill` | Entry point for skill management | `synck skill` |
+| `find` | Search and list existing skills | `synck find` |
+| `create` | Create a new agent skill from a prompt | `synck create` |
+| `sync` | Synchronize skills and update AGENTS.md/OPENCODE.md | `synck sync` |
+| `fullskills` | Complete skill workflow | `synck fullskills` |
 | `bash-defensive-patterns` | Master defensive Bash programming techniques for production-grade scripts. Use when writing robust shell scripts, CI/CD pipelines, or system utilities requiring fault tolerance and safety. | `synck bash-defensive-patterns` |
 | `context7` | Disciplined use of Context7 docs lookup: resolve library ID first, query docs with precise questions, version selection, usage limits, not sending secrets, when to use vs local docs/web search. Trigger: looking for documentation for external libraries, framework features, or API references.
  | `synck context7` |
@@ -28,8 +33,9 @@ This agent provides skill management commands derived from the current skill inv
  | `synck serena-mcp-tools` |
 | `skill-creator` | Creates new AI agent skills following the Agent Skills spec. Trigger: When user asks to create a new skill, add agent instructions, or document patterns for AI.
  | `synck skill-creator` |
-| `skill-sync` | Syncs skill metadata to AGENTS.md Auto-invoke sections. Trigger: When updating skill metadata (metadata.scope/metadata.auto_invoke), regenerating Auto-invoke tables, or running synck sync.
+| `skill-sync` | Syncs skill metadata to AGENTS.md Auto-invoke sections. Trigger: When updating skill metadata (metadata.scope/metadata.auto_invoke), regenerating Auto-invoke tables, or running ./.agent/skills/skill-sync/assets/sync.sh (including --dry-run/--scope).
  | `synck skill-sync` |
+| `smoke-test` | — | `synck smoke-test` |
 | `test-prompt-scope` | test prompt scope. Trigger: When the user asks for test prompt scope.
  | `synck test-prompt-scope` |
 

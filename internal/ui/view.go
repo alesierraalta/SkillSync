@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -57,9 +58,17 @@ func (m Model) View() string {
 		content = m.deleteConfirmView()
 
 	case ScreenAgentEcosystem:
-
 		content = m.agentEcosystemView()
-
+	case ScreenAgentMenu:
+		content = m.agentMenuView()
+	case ScreenPluginsMenu:
+		content = m.pluginsMenuView()
+	case ScreenMCPServersMenu:
+		content = m.mcpServersMenuView()
+	case ScreenGlobalSkillsCats:
+		content = m.viewGlobalSkillsCats()
+	case ScreenGlobalSkillsList:
+		content = m.viewGlobalSkillsList()
 	}
 
 	if m.Screen == ScreenSyncing {
@@ -92,7 +101,10 @@ func (m Model) renderFooter() string {
 		}
 	}
 
-	return footer
+	// Trim trailing whitespace: footerStyle's horizontal padding leaves
+	// trailing spaces on the last binding, which are visually noise and
+	// trip `git diff --check` in the golden files.
+	return strings.TrimRight(footer, " \t")
 }
 
 func (m Model) homeView() string {
@@ -106,6 +118,7 @@ func (m Model) homeView() string {
 		"4. Sincronizar con OpenCode",
 		"5. Proyectos",
 		"6. Agent Ecosystem",
+		"7. Global Skills",
 	}
 
 	var body string
@@ -316,37 +329,148 @@ func (m Model) renderAgentRow(agent agentdetect.AgentInfo, selected bool, width 
 	return row
 }
 
-// renderAgentDetail renders the MCP Servers + Plugins subsections for the
-// selected agent. When both lists are empty, it returns the styled hint
-// message. Pure rendering — no IO, no mutations.
-// Spec: DP-1, DP-1.1, DP-1.2, DP-1.3, DP-2.
 func (m Model) renderAgentDetail(agent agentdetect.AgentInfo, width int) string {
 	_ = width
 	if len(agent.MCPServers) == 0 && len(agent.Plugins) == 0 {
 		return hintStyle.Render("  No MCP servers or plugins configured.")
 	}
 
-	lines := make([]string, 0, 4)
+	lines := make([]string, 0, 2)
 	if len(agent.MCPServers) > 0 {
-		lines = append(lines, cardTitleStyle.Render("MCP Servers"))
-		for _, srv := range agent.MCPServers {
-			// • + name + (transport) — bullet is hintStyle, name is literal.
-			lines = append(lines, "  "+hintStyle.Render("•")+" "+srv.Name+fmt.Sprintf(" (%s)", srv.Transport))
-		}
+		lines = append(lines, fmt.Sprintf("  %d MCP Servers", len(agent.MCPServers)))
 	}
 	if len(agent.Plugins) > 0 {
-		lines = append(lines, cardTitleStyle.Render("Plugins"))
-		for _, p := range agent.Plugins {
-			marker := "[ ]"
-			if p.Enabled {
-				marker = checkmarkStyle.Render("[x]")
-			}
-			version := ""
-			if p.Version != "" {
-				version = " v" + p.Version
-			}
-			lines = append(lines, "  "+marker+" "+p.Name+version)
-		}
+		lines = append(lines, fmt.Sprintf("  %d Plugins", len(agent.Plugins)))
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+	return hintStyle.Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
+}
+
+func (m Model) agentMenuView() string {
+	if len(m.agentEcosystem) == 0 {
+		return "No agent selected."
+	}
+	agent := m.agentEcosystem[m.selectedAgent]
+	title := titleStyle.Render(fmt.Sprintf("Agent Menu: %s", agent.Name))
+
+	opts := []string{
+		fmt.Sprintf("Plugins (%d)", len(agent.Plugins)),
+		fmt.Sprintf("MCP Servers (%d)", len(agent.MCPServers)),
+	}
+
+	var body string
+	for i, opt := range opts {
+		line := "  " + opt
+		if m.agentMenuCursor == i {
+			line = selectedItemStyle.Render("> " + opt)
+		}
+		body += line + "\n"
+	}
+
+	footer := hintStyle.Render(fmt.Sprintf("\n  Config Path: %s\n  (Press 'o' to open in explorer)", agent.ConfigPath))
+	return title + "\n\n" + body + footer
+}
+
+func (m Model) pluginsMenuView() string {
+	if len(m.agentEcosystem) == 0 {
+		return "No agent selected."
+	}
+	agent := m.agentEcosystem[m.selectedAgent]
+	title := titleStyle.Render(fmt.Sprintf("Plugins for %s", agent.Name))
+
+	footer := hintStyle.Render(fmt.Sprintf("\n  Config Path: %s\n  (Press 'o' to open in explorer)", agent.ConfigPath))
+
+	if len(agent.Plugins) == 0 {
+		return title + "\n\n" + hintStyle.Render("  No plugins configured.") + footer
+	}
+
+	var body string
+	for i, p := range agent.Plugins {
+		marker := "[ ]"
+		if p.Enabled {
+			marker = checkmarkStyle.Render("[x]")
+		}
+		version := ""
+		if p.Version != "" {
+			version = " v" + p.Version
+		}
+
+		line := fmt.Sprintf("%s %s%s", marker, p.Name, version)
+		if m.pluginsMenuCursor == i {
+			line = selectedItemStyle.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		body += line + "\n"
+	}
+
+	return title + "\n\n" + body + footer
+}
+
+func (m Model) mcpServersMenuView() string {
+	if len(m.agentEcosystem) == 0 {
+		return "No agent selected."
+	}
+	agent := m.agentEcosystem[m.selectedAgent]
+	title := titleStyle.Render(fmt.Sprintf("MCP Servers for %s", agent.Name))
+
+	footer := hintStyle.Render(fmt.Sprintf("\n  Config Path: %s\n  (Press 'o' to open in explorer)", agent.ConfigPath))
+
+	if len(agent.MCPServers) == 0 {
+		return title + "\n\n" + hintStyle.Render("  No MCP servers configured.") + footer
+	}
+
+	var body string
+	for i, s := range agent.MCPServers {
+		marker := "[ ]"
+		// MCPServer doesn't have Enabled, default to just listing them or assume active
+
+		line := fmt.Sprintf("%s %s", marker, s.Name)
+		if m.mcpServersMenuCursor == i {
+			line = selectedItemStyle.Render("> " + line)
+		} else {
+			line = "  " + line
+		}
+		body += line + "\n"
+	}
+
+	return title + "\n\n" + body + footer
+}
+
+func (m Model) viewGlobalSkillsCats() string {
+	title := titleStyle.Render("Global Skills - Categories")
+
+	opts := globalSkillCategories
+
+	var body string
+	for i, opt := range opts {
+		var line string
+		if m.globalCategoryCursor == i {
+			line = selectedItemStyle.Render("> " + opt)
+		} else {
+			line = "  " + opt
+		}
+		body += line + "\n"
+	}
+
+	if m.StatusMsg != "" {
+		body += "\n" + m.StatusMsg + "\n"
+	}
+
+	return title + "\n\n" + body
+}
+
+func (m Model) viewGlobalSkillsList() string {
+	if !m.globalSkillsLoaded {
+		return titleStyle.Render("Global Skills: "+m.globalCategory) + "\n\n  Buscando..."
+	}
+	if m.globalSkillsErr != nil {
+		title := titleStyle.Render(m.globalSkillsList.Title)
+		errLine := errorStyle.Render(fmt.Sprintf("  Error: %v", m.globalSkillsErr))
+		hint := hintStyle.Render("  Press esc to go back and pick a different category.")
+		return title + "\n\n" + errLine + "\n\n" + hint
+	}
+	if len(m.globalSkillsList.Items()) == 0 {
+		return titleStyle.Render(m.globalSkillsList.Title) + "\n\n  No se encontraron skills en esta categoría."
+	}
+	return docStyle.Render(m.globalSkillsList.View())
 }
