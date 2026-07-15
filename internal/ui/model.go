@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"skillsync/tui/internal/agentdetect"
 	"skillsync/tui/internal/runner"
@@ -45,6 +46,7 @@ const (
 	ScreenMCPServersMenu
 	ScreenGlobalSkillsCats
 	ScreenGlobalSkillsList
+	ScreenBundleImport
 )
 
 type Model struct {
@@ -95,6 +97,11 @@ type Model struct {
 	globalCategoryCursor int
 	globalSkillsLoaded   bool
 	globalSkillsErr      error
+
+	// Vault selection / bundle state
+	selectMode     bool            // multi-select active in Global Skills
+	vaultSelected  map[string]bool // selected vault skill names
+	bundleImportIn textinput.Model // path input on the import screen
 }
 
 type globalSkillItem struct {
@@ -203,6 +210,11 @@ func (i item) FilterValue() string { return i.skill.Name }
 func NewModel(backend AppService) Model {
 	sl := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	sl.Title = "Almacenamiento Global"
+	// Filtering is disabled on the vault list: the select/export/import keys
+	// (space/e/m) would otherwise be swallowed while filtering, and the custom
+	// select-mode view indexes m.storedSkills directly, which a filtered list
+	// order would desync. See skill-vault-tui review (R2/R3).
+	sl.SetFilteringEnabled(false)
 
 	pl := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	pl.Title = "Proyectos Sincronizados"
@@ -211,6 +223,10 @@ func NewModel(backend AppService) Model {
 	glDelegate.SetHeight(5)
 	gl := list.New([]list.Item{}, glDelegate, 0, 0)
 	gl.Title = "Global Skills"
+
+	importIn := textinput.New()
+	importIn.Placeholder = "path/to/bundle.skillsync"
+	importIn.Prompt = "> "
 
 	return Model{
 		Screen:           ScreenHome,
@@ -224,6 +240,8 @@ func NewModel(backend AppService) Model {
 		List:             NewListModel(backend, "."),
 		deleteConfirm:    NewDeleteConfirmModel(backend),
 		backend:          backend,
+		vaultSelected:    make(map[string]bool),
+		bundleImportIn:   importIn,
 	}
 }
 
@@ -268,8 +286,16 @@ func (m Model) GetKeyBindings() []KeyBinding {
 		return []KeyBinding{
 			{Key: "esc", Help: "back"},
 			{Key: "up/down", Help: "navigate"},
+			{Key: "space", Help: "select"},
+			{Key: "e", Help: "export selection"},
+			{Key: "m", Help: "import bundle"},
 			{Key: "i", Help: "install & sync"},
 			{Key: "d", Help: "delete from storage"},
+		}
+	case ScreenBundleImport:
+		return []KeyBinding{
+			{Key: "enter", Help: "import"},
+			{Key: "esc", Help: "cancel"},
 		}
 	case ScreenProjects:
 		return []KeyBinding{

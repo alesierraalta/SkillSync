@@ -49,6 +49,10 @@ func (m Model) View() string {
 
 		content = m.storageView()
 
+	case ScreenBundleImport:
+
+		content = m.bundleImportView()
+
 	case ScreenProjects:
 
 		content = m.projectsView()
@@ -245,7 +249,65 @@ func (m Model) storageView() string {
 	if len(m.storedSkills) == 0 {
 		return s + lipgloss.NewStyle().MarginLeft(4).Render("No hay skills almacenadas.\nPresioná 's' en la vista de gestión para guardar una.")
 	}
-	return s + docStyle.Render(m.storageList.View())
+	if m.selectMode {
+		return s + m.storageSelectView()
+	}
+	hint := hintStyle.Render("space: seleccionar · m: importar bundle")
+	return s + hint + "\n\n" + docStyle.Render(m.storageList.View())
+}
+
+// storageSelectView renders the vault as a checklist with a cursor and
+// [x]/[ ] markers while multi-select is active. Rows are windowed to the
+// available height so a large vault never overflows the terminal. Filtering
+// is disabled on storageList (see NewModel), so storageList.Index() stays
+// aligned with m.storedSkills here.
+func (m Model) storageSelectView() string {
+	var b strings.Builder
+	b.WriteString(hintStyle.Render("space: (des)seleccionar · e: exportar selección · m: importar · esc: salir") + "\n\n")
+
+	idx := m.storageList.Index()
+	start, end := windowBounds(idx, len(m.storedSkills), m.Height-8)
+	for i := start; i < end; i++ {
+		name := m.storedSkills[i].Metadata.SkillName
+		cursor := "  "
+		if i == idx {
+			cursor = "> "
+		}
+		marker := "[ ]"
+		if m.vaultSelected[name] {
+			marker = "[x]"
+		}
+		b.WriteString(fmt.Sprintf("%s%s %s\n", cursor, marker, name))
+	}
+	b.WriteString(fmt.Sprintf("\n%d seleccionada(s) de %d", len(m.selectedVaultNames()), len(m.storedSkills)))
+	return docStyle.Render(b.String())
+}
+
+// windowBounds returns a [start,end) slice window of size maxRows that keeps
+// index idx visible. If maxRows <= 0 or exceeds total, the full range is used.
+func windowBounds(idx, total, maxRows int) (int, int) {
+	if maxRows <= 0 || maxRows >= total {
+		return 0, total
+	}
+	start := 0
+	if idx >= maxRows {
+		start = idx - maxRows + 1
+	}
+	end := start + maxRows
+	if end > total {
+		end = total
+		start = end - maxRows
+	}
+	return start, end
+}
+
+// bundleImportView renders the .skillsync import screen with a path input.
+func (m Model) bundleImportView() string {
+	s := titleStyle.Render("Importar Bundle .skillsync") + "\n\n"
+	body := "Ingresá la ruta del bundle a instalar en este proyecto:\n\n" +
+		m.bundleImportIn.View() + "\n\n" +
+		hintStyle.Render("enter: importar · esc: cancelar")
+	return s + docStyle.Render(body)
 }
 
 func (m Model) projectsView() string {

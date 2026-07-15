@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -61,6 +62,24 @@ type installerFinishedMsg struct {
 }
 
 type storedSkillsLoadedMsg []storage.StoredSkill
+
+// bundleExportedMsg reports the outcome of an ExportBundle command.
+type bundleExportedMsg struct {
+	path string
+	err  error
+}
+
+// bundleImportedMsg reports the outcome of an ImportBundle command.
+type bundleImportedMsg struct {
+	results []importResultLine
+	err     error
+}
+
+// importResultLine is a view-friendly copy of a per-skill import result.
+type importResultLine struct {
+	skill  string
+	status string
+}
 type projectsLoadedMsg []storage.ProjectInfo
 type statusMsg string
 
@@ -222,6 +241,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Screen = ScreenHome
 		return m, m.loadSkills()
 
+	case bundleExportedMsg:
+		if msg.err != nil {
+			m.StatusMsg = fmt.Sprintf("Export failed: %v", msg.err)
+		} else {
+			m.StatusMsg = fmt.Sprintf("Exported bundle to %s", msg.path)
+			m.vaultSelected = make(map[string]bool)
+			m.selectMode = false
+		}
+		return m, nil
+
+	case bundleImportedMsg:
+		if msg.err != nil {
+			m.StatusMsg = fmt.Sprintf("Import failed: %v", msg.err)
+		} else {
+			m.StatusMsg = summarizeImport(msg.results)
+		}
+		return m, nil
+
 	case storedSkillsLoadedMsg:
 		var items []list.Item
 		m.storedSkills = []storage.StoredSkill(msg)
@@ -316,6 +353,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleInstallerKeys(msg)
 	case ScreenStorage:
 		return m.handleStorageKeys(msg)
+	case ScreenBundleImport:
+		return m.handleBundleImportKeys(msg)
 	case ScreenProjects:
 		return m.handleProjectsKeys(msg)
 	case ScreenDeleteConfirm:
@@ -981,11 +1020,147 @@ func (m Model) handleStorageKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+	case " ":
+		if itm, ok := m.storageList.SelectedItem().(storageItem); ok {
+			name := itm.stored.Metadata.SkillName
+			if m.vaultSelected == nil {
+				m.vaultSelected = make(map[string]bool)
+			}
+			if m.vaultSelected[name] {
+				delete(m.vaultSelected, name)
+			} else {
+				m.vaultSelected[name] = true
+			}
+			m.selectMode = len(m.vaultSelected) > 0
+			return m, nil
+		}
+	case "e":
+		names := m.selectedVaultNames()
+		if len(names) == 0 {
+			m.StatusMsg = "No skills selected — press space to select, then e to export"
+			return m, nil
+		}
+		dest, err := bundleDestPath(names)
+		if err != nil {
+			m.StatusMsg = fmt.Sprintf("Export failed: %v", err)
+			return m, nil
+		}
+		m.StatusMsg = fmt.Sprintf("Exporting %d skill(s)…", len(names))
+		return m, m.exportBundleCmd(names, dest)
+	case "m":
+		m.bundleImportIn.SetValue("")
+		m.bundleImportIn.Focus()
+		m.PrevScreen = m.Screen
+		m.Screen = ScreenBundleImport
+		return m, nil
 	}
 
 	var cmd tea.Cmd
 	m.storageList, cmd = m.storageList.Update(msg)
 	return m, cmd
+}
+
+// selectedVaultNames returns the selected vault skill names in stable order.
+func (m Model) selectedVaultNames() []string {
+	names := make([]string, 0, len(m.vaultSelected))
+	for name, sel := range m.vaultSelected {
+		if sel {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// bundleDestPath builds the default export path under ~/.skillsync/bundles/.
+// It returns an error if the user home directory cannot be resolved, so we
+// never silently write the bundle to a relative path in the process cwd.
+func bundleDestPath(names []string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
+	dir := filepath.Join(home, ".skillsync", "bundles")
+	base := "skillsync-bundle.skillsync"
+	if len(names) == 1 {
+		base = names[0] + ".skillsync"
+	}
+	return filepath.Join(dir, base), nil
+}
+
+// summarizeImport builds a status line that distinguishes installed skills
+// from per-skill failures and warnings, so a partial import is never reported
+// as a full success.
+func summarizeImport(results []importResultLine) string {
+	var installed, failed, other int
+	for _, r := range results {
+		switch r.status {
+		case "installed", "overwritten":
+			installed++
+		case "failed":
+			failed++
+		default: // skipped, warning, etc.
+			other++
+		}
+	}
+	msg := fmt.Sprintf("Imported %d skill(s)", installed)
+	if failed > 0 {
+		msg += fmt.Sprintf(", %d failed", failed)
+	}
+	if other > 0 {
+		msg += fmt.Sprintf(", %d warning(s)", other)
+	}
+	return msg
+}
+
+// exportBundleCmd exports the named vault skills to dest off the UI goroutine.
+func (m Model) exportBundleCmd(names []string, dest string) tea.Cmd {
+	backend := m.backend
+	return func() tea.Msg {
+		path, err := backend.ExportBundle(names, dest)
+		return bundleExportedMsg{path: path, err: err}
+	}
+}
+
+// handleBundleImportKeys drives the bundle import screen: esc returns to the
+// vault, enter imports the entered path, and other keys edit the path input.
+func (m Model) handleBundleImportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.bundleImportIn.Blur()
+		m.Screen = ScreenStorage
+		return m, nil
+	case tea.KeyEnter:
+		path := strings.TrimSpace(m.bundleImportIn.Value())
+		if path == "" {
+			m.StatusMsg = "Enter a .skillsync bundle path"
+			return m, nil
+		}
+		m.bundleImportIn.Blur()
+		m.Screen = ScreenStorage
+		m.StatusMsg = "Importing bundle…"
+		return m, m.importBundleCmd(path, m.rootPath)
+	}
+
+	var cmd tea.Cmd
+	m.bundleImportIn, cmd = m.bundleImportIn.Update(msg)
+	return m, cmd
+}
+
+// importBundleCmd installs a .skillsync bundle into projectRoot off the UI goroutine.
+func (m Model) importBundleCmd(path, projectRoot string) tea.Cmd {
+	backend := m.backend
+	return func() tea.Msg {
+		results, err := backend.ImportBundle(path, projectRoot)
+		if err != nil {
+			return bundleImportedMsg{err: err}
+		}
+		lines := make([]importResultLine, 0, len(results))
+		for _, r := range results {
+			lines = append(lines, importResultLine{skill: r.Skill, status: r.Status})
+		}
+		return bundleImportedMsg{results: lines}
+	}
 }
 
 func (m Model) handleDeleteConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

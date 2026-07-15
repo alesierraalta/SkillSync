@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"skillsync/tui/internal/agentdetect"
+	"skillsync/tui/internal/bundle"
 	"skillsync/tui/internal/remove"
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
@@ -28,6 +29,16 @@ type fakeAppService struct {
 
 	removedPaths []string
 	removeErr    error
+
+	exportedNames []string
+	exportedDest  string
+	exportPath    string
+	exportErr     error
+
+	importedPath  string
+	importRoot    string
+	importResults []bundle.ImportResult
+	importErr     error
 }
 
 func (f *fakeAppService) DiscoverSkills(string) ([]string, error) {
@@ -80,6 +91,19 @@ func (f *fakeAppService) RegisterSkillManagerAgent() error       { return nil }
 func (f *fakeAppService) EnsureAgentsMD(string) error            { return nil }
 func (f *fakeAppService) RemoveSkill(string, remove.Options) error {
 	return nil
+}
+func (f *fakeAppService) ExportBundle(names []string, destPath string) (string, error) {
+	f.exportedNames = names
+	f.exportedDest = destPath
+	if f.exportPath != "" {
+		return f.exportPath, f.exportErr
+	}
+	return destPath, f.exportErr
+}
+func (f *fakeAppService) ImportBundle(bundlePath, projectRoot string) ([]bundle.ImportResult, error) {
+	f.importedPath = bundlePath
+	f.importRoot = projectRoot
+	return f.importResults, f.importErr
 }
 func (f *fakeAppService) DetectAgentEcosystem() ([]agentdetect.AgentInfo, error) {
 	return nil, nil

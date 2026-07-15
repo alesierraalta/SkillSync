@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"skillsync/tui/internal/agentdetect"
+	"skillsync/tui/internal/bundle"
 	"skillsync/tui/internal/remove"
 	"skillsync/tui/internal/runner"
 	"skillsync/tui/internal/storage"
@@ -36,6 +37,8 @@ type MockAppService struct {
 	RemoveSkillFunc               func(name string, opts remove.Options) error
 	DetectAgentEcosystemFunc      func() ([]agentdetect.AgentInfo, error)
 	RemoveGlobalSkillFunc         func(path string) error
+	ExportBundleFunc              func(names []string, destPath string) (string, error)
+	ImportBundleFunc              func(bundlePath, projectRoot string) ([]bundle.ImportResult, error)
 }
 
 func (m *MockAppService) DiscoverSkills(rootPath string) ([]string, error) {
@@ -133,6 +136,20 @@ func (m *MockAppService) RemoveGlobalSkill(path string) error {
 		return m.RemoveGlobalSkillFunc(path)
 	}
 	return nil
+}
+
+func (m *MockAppService) ExportBundle(names []string, destPath string) (string, error) {
+	if m.ExportBundleFunc != nil {
+		return m.ExportBundleFunc(names, destPath)
+	}
+	return "", nil
+}
+
+func (m *MockAppService) ImportBundle(bundlePath, projectRoot string) ([]bundle.ImportResult, error) {
+	if m.ImportBundleFunc != nil {
+		return m.ImportBundleFunc(bundlePath, projectRoot)
+	}
+	return nil, nil
 }
 
 func TestMockAppService_InterfaceCompliance(t *testing.T) {
