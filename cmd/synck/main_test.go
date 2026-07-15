@@ -7,9 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"skillsync/tui/internal/bundle"
 	"skillsync/tui/internal/diff"
 	"skillsync/tui/internal/install"
 	"skillsync/tui/internal/runner"
+	"skillsync/tui/internal/vault"
 )
 
 func TestCLIFlags(t *testing.T) {
@@ -652,5 +655,204 @@ func TestHandleSync_VerboseFlag(t *testing.T) {
 	}
 	if !strings.Contains(verboseOutput, "→ [1/8]") {
 		t.Error("verbose output missing progress line")
+	}
+}
+
+// ----------------------------------------------------------------
+// Bundle CLI tests — PR1 Phase 4
+// ----------------------------------------------------------------
+
+func TestCLIBundleExport_Dispatch(t *testing.T) {
+	called := false
+	var capturedNames []string
+	var capturedOutput string
+
+	oldExport := BundleExport
+	BundleExport = func(svc *vault.Service, names []string, outputPath string) (string, error) {
+		called = true
+		capturedNames = names
+		capturedOutput = outputPath
+		return outputPath, nil
+	}
+	defer func() { BundleExport = oldExport }()
+
+	TUIRunner = func() error { return nil }
+	GlobalInstaller = func() install.Result { return install.Result{Success: true} }
+
+	tmpDir := t.TempDir()
+	err := run([]string{"synck", "bundle", "export", "--output", filepath.Join(tmpDir, "out.skillsync"), "skill-a", "skill-b"})
+	if err != nil {
+		t.Fatalf("bundle export failed: %v", err)
+	}
+
+	if !called {
+		t.Error("BundleExport was not called")
+	}
+	if len(capturedNames) != 2 || capturedNames[0] != "skill-a" || capturedNames[1] != "skill-b" {
+		t.Errorf("export names = %v, want [skill-a skill-b]", capturedNames)
+	}
+	if !strings.HasSuffix(capturedOutput, "out.skillsync") {
+		t.Errorf("output path = %s, should end with out.skillsync", capturedOutput)
+	}
+}
+
+func TestCLIBundleList_Dispatch(t *testing.T) {
+	// Create a real bundle to list
+	tmpDir := t.TempDir()
+	bundlePath := filepath.Join(tmpDir, "listtest.skillsync")
+
+	svc := vault.NewServiceWithRoot(tmpDir)
+	skillDir := filepath.Join(tmpDir, "listskill")
+	os.MkdirAll(skillDir, 0755)
+	os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("name: listskill\n"), 0644)
+	os.WriteFile(filepath.Join(skillDir, "METADATA.json"), []byte(`{"skill_name":"listskill"}`), 0644)
+
+	_, err := bundle.Export(svc, []string{"listskill"}, bundlePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	TUIRunner = func() error { return nil }
+	GlobalInstaller = func() install.Result { return install.Result{Success: true} }
+
+	err = run([]string{"synck", "bundle", "list", bundlePath})
+	if err != nil {
+		t.Fatalf("bundle list failed: %v", err)
+	}
+}
+
+func TestCLIInstallBundle_Dispatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	// Create .agents so findProjectRoot works
+	os.MkdirAll(".agents", 0755)
+
+	bundlePath := filepath.Join(tmpDir, "test-bundle.skillsync")
+	// Create a valid bundle file
+	os.WriteFile(bundlePath, []byte("fake bundle"), 0644)
+
+	called := false
+	var capturedBundlePath string
+
+	oldImport := BundleImport
+	BundleImport = func(bp string, opts bundle.ImportOptions) ([]bundle.ImportResult, error) {
+		called = true
+		capturedBundlePath = bp
+		return []bundle.ImportResult{{Skill: "test", Status: "installed"}}, nil
+	}
+	defer func() { BundleImport = oldImport }()
+
+	err := run([]string{"synck", "install", "--bundle", bundlePath})
+	if err != nil {
+		t.Fatalf("install --bundle failed: %v", err)
+	}
+
+	if !called {
+		t.Error("BundleImport was not called via install --bundle")
+	}
+	if capturedBundlePath != bundlePath {
+		t.Errorf("bundle path = %s, want %s", capturedBundlePath, bundlePath)
+	}
+}
+
+func TestCLIBundleImport_Dispatch(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	// Create .agents/skills so findProjectRoot works
+	os.MkdirAll(".agents/skills", 0755)
+
+	bundlePath := filepath.Join(tmpDir, "import-test.skillsync")
+	// Write a dummy bundle file (not actually opened, just needs to exist for Stat check)
+	os.WriteFile(bundlePath, []byte("dummy"), 0644)
+
+	called := false
+	oldImport := BundleImport
+	BundleImport = func(bp string, opts bundle.ImportOptions) ([]bundle.ImportResult, error) {
+		called = true
+		return []bundle.ImportResult{{Skill: "mocked", Status: "installed"}}, nil
+	}
+	defer func() { BundleImport = oldImport }()
+
+	TUIRunner = func() error { return nil }
+	GlobalInstaller = func() install.Result { return install.Result{Success: true} }
+
+	err := run([]string{"synck", "bundle", "import", bundlePath})
+	if err != nil {
+		t.Fatalf("bundle import failed: %v", err)
+	}
+
+	if !called {
+		t.Error("BundleImport was not called via bundle import")
+	}
+}
+
+func TestCLIBundleExport_MissingSkill_ReturnsError(t *testing.T) {
+	oldExport := BundleExport
+	BundleExport = func(svc *vault.Service, names []string, outputPath string) (string, error) {
+		return "", fmt.Errorf("skill %q not found", names[1])
+	}
+	defer func() { BundleExport = oldExport }()
+
+	TUIRunner = func() error { return nil }
+	GlobalInstaller = func() install.Result { return install.Result{Success: true} }
+
+	err := run([]string{"synck", "bundle", "export", "existing", "missing"})
+	if err == nil {
+		t.Fatal("expected error for missing skill in bundle export")
+	}
+}
+
+func TestCLIBundleImport_ParseFailure_ReturnsError(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	os.MkdirAll(".agents/skills", 0755)
+	bundlePath := filepath.Join(tmpDir, "bad.skillsync")
+	os.WriteFile(bundlePath, []byte("not a zip"), 0644)
+
+	TUIRunner = func() error { return nil }
+	GlobalInstaller = func() install.Result { return install.Result{Success: true} }
+
+	err := run([]string{"synck", "bundle", "import", bundlePath})
+	if err == nil {
+		t.Fatal("expected error for invalid bundle import")
+	}
+}
+
+func TestCLIInstallBundle_FailurePropagates(t *testing.T) {
+	tmpDir := t.TempDir()
+	origDir, _ := os.Getwd()
+	_ = os.Chdir(tmpDir)
+	defer os.Chdir(origDir)
+
+	os.MkdirAll(".agents", 0755)
+	bundlePath := filepath.Join(tmpDir, "fail.skillsync")
+	os.WriteFile(bundlePath, []byte("dummy"), 0644)
+
+	oldImport := BundleImport
+	BundleImport = func(bp string, opts bundle.ImportOptions) ([]bundle.ImportResult, error) {
+		return []bundle.ImportResult{
+			{Skill: "fail", Status: "failed", Error: fmt.Errorf("write error")},
+		}, nil
+	}
+	defer func() { BundleImport = oldImport }()
+
+	TUIRunner = func() error { return nil }
+	GlobalInstaller = func() install.Result { return install.Result{Success: true} }
+
+	err := run([]string{"synck", "install", "--bundle", bundlePath})
+	if err == nil {
+		t.Fatal("expected error for failed import results")
+	}
+	if !strings.Contains(err.Error(), "failed") {
+		t.Errorf("error = %q, want 'failed'", err.Error())
 	}
 }

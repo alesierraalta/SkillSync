@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"skillsync/tui/internal/bundle"
 	"skillsync/tui/internal/diff"
 	"skillsync/tui/internal/discovery"
 	"skillsync/tui/internal/install"
@@ -15,6 +16,7 @@ import (
 	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/syncengine"
 	"skillsync/tui/internal/ui"
+	"skillsync/tui/internal/vault"
 	"strings"
 )
 
@@ -38,6 +40,33 @@ var AutoskillsPreflightChecker = func() error {
 }
 var TUIRunner = ui.Run
 
+// BundleExport is the export function used by the bundle subcommand.
+// Overridable in tests.
+var BundleExport = bundle.Export
+
+// BundleImport is the import function used by the bundle subcommand.
+// Overridable in tests.
+var BundleImport = bundle.Import
+
+// BundleReadManifest reads a bundle's manifest for listing.
+// Overridable in tests.
+var BundleReadManifest = bundle.ReadManifest
+
+// exitCodeFromResults returns an error if any ImportResult has Status "failed".
+// This ensures the CLI exits with a non-zero code when imports fail.
+func exitCodeFromResults(results []bundle.ImportResult) error {
+	var failedCount int
+	for _, r := range results {
+		if r.Status == "failed" {
+			failedCount++
+		}
+	}
+	if failedCount > 0 {
+		return fmt.Errorf("%d skill(s) failed", failedCount)
+	}
+	return nil
+}
+
 const version = "0.1.0"
 
 func run(args []string) error {
@@ -50,10 +79,16 @@ func run(args []string) error {
 			return handleSyncOpenCode(actualArgs[1:])
 		case "createskill", "create":
 			return handleCreateSkill(actualArgs[1:])
+		case "bundle":
+			return handleBundle(actualArgs[1:])
 		case "install":
 			// Handle 'synck install -g'
 			if len(actualArgs) > 1 && actualArgs[1] == "-g" {
 				actualArgs = actualArgs[1:]
+			}
+			// Handle 'synck install --bundle <path>'
+			if len(actualArgs) > 1 && actualArgs[1] == "--bundle" {
+				return handleInstallBundle(actualArgs[2:])
 			}
 		case "skill":
 			return handleSkill()
@@ -667,6 +702,193 @@ func runRemove(name string, local, force bool) error {
 		fmt.Fprintf(os.Stderr, "⚠️  Warning: post-delete regeneration reported errors: %v\n", err)
 	}
 	return nil
+}
+
+// handleBundle dispatches to bundle subcommands (export, import, list).
+func handleBundle(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: synck bundle <export|import|list> [args]")
+	}
+
+	switch args[0] {
+	case "export":
+		return handleBundleExport(args[1:])
+	case "import":
+		return handleBundleImport(args[1:])
+	case "list":
+		return handleBundleList(args[1:])
+	default:
+		return fmt.Errorf("unknown bundle subcommand %q (use: export, import, list)", args[0])
+	}
+}
+
+// handleBundleExport exports one or more skills to a .skillsync bundle.
+// Default export path is ~/.skillsync/bundles/{name}.skillsync.
+func handleBundleExport(args []string) error {
+	f := flag.NewFlagSet("bundle export", flag.ContinueOnError)
+	output := f.String("output", "", "Output path for the bundle (default: ~/.skillsync/bundles/)")
+	if err := f.Parse(args); err != nil {
+		if err == flag.ErrHelp {
+			return nil
+		}
+		return err
+	}
+
+	skillNames := f.Args()
+	if len(skillNames) == 0 {
+		return fmt.Errorf("usage: synck bundle export <skill-name>... [--output <path>]")
+	}
+
+	// Resolve default export directory
+	exportPath := *output
+	if exportPath == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("home dir: %w", err)
+		}
+		bundlesDir := filepath.Join(homeDir, ".skillsync", "bundles")
+		if len(skillNames) == 1 {
+			exportPath = filepath.Join(bundlesDir, skillNames[0]+".skillsync")
+		} else {
+			exportPath = filepath.Join(bundlesDir, "skillsync-bundle.skillsync")
+		}
+	}
+
+	v := vault.NewService()
+	path, err := BundleExport(v, skillNames, exportPath)
+	if err != nil {
+		return fmt.Errorf("export failed: %w", err)
+	}
+	fmt.Printf("✅ Bundle created: %s\n", path)
+	return nil
+}
+
+// handleBundleImport imports skills from a .skillsync bundle.
+func handleBundleImport(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: synck bundle import <bundle-path>")
+	}
+
+	bundlePath := args[0]
+	if _, err := os.Stat(bundlePath); os.IsNotExist(err) {
+		return fmt.Errorf("bundle not found: %s", bundlePath)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	root := findProjectRoot(cwd)
+	if root == "" {
+		return fmt.Errorf("could not find project root")
+	}
+
+	opts := bundle.ImportOptions{
+		ProjectRoot: root,
+	}
+	if len(args) > 1 && args[1] == "--force" {
+		opts.OnDuplicate = bundle.DuplicateOverwrite
+	}
+
+	results, err := BundleImport(bundlePath, opts)
+	if err != nil {
+		return fmt.Errorf("import failed: %w", err)
+	}
+
+	fmt.Printf("📦 Imported %d skill(s) from %s\n", len(results), bundlePath)
+	for _, r := range results {
+		icon := "✅"
+		if r.Status == "skipped" {
+			icon = "⏭️"
+		} else if r.Status == "warning" {
+			icon = "⚠️"
+		}
+		if r.Error != nil {
+			fmt.Printf("  %s %s: %v\n", icon, r.Skill, r.Error)
+		} else {
+			fmt.Printf("  %s %s (%s)\n", icon, r.Skill, r.Status)
+		}
+	}
+	return exitCodeFromResults(results)
+}
+
+// handleBundleList lists the contents of a .skillsync bundle without extracting.
+func handleBundleList(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: synck bundle list <bundle-path>")
+	}
+
+	bundlePath := args[0]
+	m, err := BundleReadManifest(bundlePath)
+	if err != nil {
+		return fmt.Errorf("read bundle: %w", err)
+	}
+
+	fmt.Printf("📦 Bundle: %s\n", bundlePath)
+	fmt.Printf("  Version:     %d\n", m.Version)
+	fmt.Printf("  Created:     %s\n", m.CreatedAt.Format("2006-01-02 15:04:05"))
+	fmt.Printf("  Created by:  %s\n", m.CreatedBy)
+	fmt.Printf("  Skills:      %d\n", len(m.Skills))
+	for _, s := range m.Skills {
+		prov := s.OriginProvider
+		if prov == "" {
+			prov = "unknown"
+		}
+		if s.Description != "" {
+			fmt.Printf("    - %s (origin: %s) — %s\n", s.Name, prov, s.Description)
+		} else {
+			fmt.Printf("    - %s (origin: %s)\n", s.Name, prov)
+		}
+	}
+	return nil
+}
+
+// handleInstallBundle implements `synck install --bundle <path>`.
+func handleInstallBundle(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: synck install --bundle <bundle-path>")
+	}
+
+	bundlePath := args[0]
+	if _, err := os.Stat(bundlePath); os.IsNotExist(err) {
+		return fmt.Errorf("bundle not found: %s", bundlePath)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	root := findProjectRoot(cwd)
+	if root == "" {
+		return fmt.Errorf("could not find project root")
+	}
+
+	opts := bundle.ImportOptions{
+		ProjectRoot: root,
+	}
+	// Check for --force after bundle path
+	if len(args) > 1 && args[1] == "--force" {
+		opts.OnDuplicate = bundle.DuplicateOverwrite
+	}
+
+	results, err := BundleImport(bundlePath, opts)
+	if err != nil {
+		return fmt.Errorf("install from bundle failed: %w", err)
+	}
+
+	fmt.Printf("📦 Installed %d skill(s) from bundle\n", len(results))
+	for _, r := range results {
+		icon := "✅"
+		if r.Status == "skipped" {
+			icon = "⏭️"
+		}
+		if r.Error != nil {
+			fmt.Printf("  %s %s: %v\n", icon, r.Skill, r.Error)
+		} else {
+			fmt.Printf("  %s %s (%s)\n", icon, r.Skill, r.Status)
+		}
+	}
+	return exitCodeFromResults(results)
 }
 
 func handleSkillSubcommand(name string) error {
