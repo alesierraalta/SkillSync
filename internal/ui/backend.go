@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"skillsync/tui/internal/agentdetect"
+	"skillsync/tui/internal/bundle"
 	"skillsync/tui/internal/coreskills"
 	"skillsync/tui/internal/discovery"
 	"skillsync/tui/internal/opencode"
@@ -17,6 +18,7 @@ import (
 	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/syncengine"
 	"skillsync/tui/internal/types"
+	"skillsync/tui/internal/vault"
 )
 
 // AppService abstracts core business logic for the UI.
@@ -43,6 +45,13 @@ type AppService interface {
 
 	RemoveSkill(name string, opts remove.Options) error
 	RemoveGlobalSkill(path string) error
+
+	// ExportBundle writes the named vault skills to a .skillsync bundle at
+	// destPath and returns the bundle path.
+	ExportBundle(names []string, destPath string) (string, error)
+	// ImportBundle installs the skills from a .skillsync bundle into the
+	// project at projectRoot and returns a per-skill result summary.
+	ImportBundle(bundlePath, projectRoot string) ([]bundle.ImportResult, error)
 
 	// DetectAgentEcosystem returns a read-only inventory of installed AI agent tools.
 	DetectAgentEcosystem() ([]agentdetect.AgentInfo, error)
@@ -224,6 +233,22 @@ func (b *Backend) RemoveSkill(name string, opts remove.Options) error {
 		_ = err
 	}
 	return nil
+}
+
+// ExportBundle writes the named vault skills to a .skillsync bundle at destPath.
+// The vault is the same storage path the backend already manages.
+func (b *Backend) ExportBundle(names []string, destPath string) (string, error) {
+	v := vault.NewServiceWithRoot(b.storage.RootPath)
+	return bundle.Export(v, names, destPath)
+}
+
+// ImportBundle installs the bundle's skills into the project at projectRoot,
+// overwriting existing skills of the same name.
+func (b *Backend) ImportBundle(bundlePath, projectRoot string) ([]bundle.ImportResult, error) {
+	return bundle.Import(bundlePath, bundle.ImportOptions{
+		ProjectRoot: projectRoot,
+		OnDuplicate: bundle.DuplicateOverwrite,
+	})
 }
 
 func (b *Backend) activeProviders() []string {
