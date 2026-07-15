@@ -134,3 +134,43 @@ func TestBundleImportViewRenders(t *testing.T) {
 		t.Error("bundle import view should render content")
 	}
 }
+
+func TestSummarizeImportReportsPartialFailure(t *testing.T) {
+	got := summarizeImport([]importResultLine{
+		{skill: "a", status: "installed"},
+		{skill: "b", status: "failed"},
+		{skill: "c", status: "warning"},
+	})
+	if !strings.Contains(got, "Imported 1") {
+		t.Errorf("want installed count 1, got %q", got)
+	}
+	if !strings.Contains(got, "1 failed") {
+		t.Errorf("partial failure must be surfaced, got %q", got)
+	}
+	if !strings.Contains(got, "warning") {
+		t.Errorf("warnings must be surfaced, got %q", got)
+	}
+}
+
+func TestImportedMsgSurfacesFailureInStatus(t *testing.T) {
+	m := NewModel(&MockAppService{})
+	nm, _ := m.Update(bundleImportedMsg{results: []importResultLine{
+		{skill: "a", status: "installed"},
+		{skill: "b", status: "failed"},
+	}})
+	if !strings.Contains(nm.(Model).StatusMsg, "failed") {
+		t.Errorf("import status should report the failure, got %q", nm.(Model).StatusMsg)
+	}
+}
+
+func TestWindowBounds(t *testing.T) {
+	if s, e := windowBounds(0, 3, 0); s != 0 || e != 3 {
+		t.Errorf("maxRows<=0 should show all: got [%d,%d)", s, e)
+	}
+	if s, e := windowBounds(9, 10, 3); s != 7 || e != 10 {
+		t.Errorf("cursor near end should keep it visible: got [%d,%d)", s, e)
+	}
+	if s, e := windowBounds(0, 10, 3); s != 0 || e != 3 {
+		t.Errorf("cursor at start: got [%d,%d)", s, e)
+	}
+}

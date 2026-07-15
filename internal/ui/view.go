@@ -257,13 +257,18 @@ func (m Model) storageView() string {
 }
 
 // storageSelectView renders the vault as a checklist with a cursor and
-// [x]/[ ] markers while multi-select is active.
+// [x]/[ ] markers while multi-select is active. Rows are windowed to the
+// available height so a large vault never overflows the terminal. Filtering
+// is disabled on storageList (see NewModel), so storageList.Index() stays
+// aligned with m.storedSkills here.
 func (m Model) storageSelectView() string {
 	var b strings.Builder
 	b.WriteString(hintStyle.Render("space: (des)seleccionar · e: exportar selección · m: importar · esc: salir") + "\n\n")
+
 	idx := m.storageList.Index()
-	for i, sk := range m.storedSkills {
-		name := sk.Metadata.SkillName
+	start, end := windowBounds(idx, len(m.storedSkills), m.Height-8)
+	for i := start; i < end; i++ {
+		name := m.storedSkills[i].Metadata.SkillName
 		cursor := "  "
 		if i == idx {
 			cursor = "> "
@@ -274,8 +279,26 @@ func (m Model) storageSelectView() string {
 		}
 		b.WriteString(fmt.Sprintf("%s%s %s\n", cursor, marker, name))
 	}
-	b.WriteString(fmt.Sprintf("\n%d seleccionada(s)", len(m.selectedVaultNames())))
+	b.WriteString(fmt.Sprintf("\n%d seleccionada(s) de %d", len(m.selectedVaultNames()), len(m.storedSkills)))
 	return docStyle.Render(b.String())
+}
+
+// windowBounds returns a [start,end) slice window of size maxRows that keeps
+// index idx visible. If maxRows <= 0 or exceeds total, the full range is used.
+func windowBounds(idx, total, maxRows int) (int, int) {
+	if maxRows <= 0 || maxRows >= total {
+		return 0, total
+	}
+	start := 0
+	if idx >= maxRows {
+		start = idx - maxRows + 1
+	}
+	end := start + maxRows
+	if end > total {
+		end = total
+		start = end - maxRows
+	}
+	return start, end
 }
 
 // bundleImportView renders the .skillsync import screen with a path input.

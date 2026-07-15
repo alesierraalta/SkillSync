@@ -255,7 +255,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.StatusMsg = fmt.Sprintf("Import failed: %v", msg.err)
 		} else {
-			m.StatusMsg = fmt.Sprintf("Imported %d skill(s)", len(msg.results))
+			m.StatusMsg = summarizeImport(msg.results)
 		}
 		return m, nil
 
@@ -1040,7 +1040,13 @@ func (m Model) handleStorageKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.StatusMsg = "No skills selected — press space to select, then e to export"
 			return m, nil
 		}
-		return m, m.exportBundleCmd(names, bundleDestPath(names))
+		dest, err := bundleDestPath(names)
+		if err != nil {
+			m.StatusMsg = fmt.Sprintf("Export failed: %v", err)
+			return m, nil
+		}
+		m.StatusMsg = fmt.Sprintf("Exporting %d skill(s)…", len(names))
+		return m, m.exportBundleCmd(names, dest)
 	case "m":
 		m.bundleImportIn.SetValue("")
 		m.bundleImportIn.Focus()
@@ -1067,14 +1073,44 @@ func (m Model) selectedVaultNames() []string {
 }
 
 // bundleDestPath builds the default export path under ~/.skillsync/bundles/.
-func bundleDestPath(names []string) string {
-	home, _ := os.UserHomeDir()
+// It returns an error if the user home directory cannot be resolved, so we
+// never silently write the bundle to a relative path in the process cwd.
+func bundleDestPath(names []string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
 	dir := filepath.Join(home, ".skillsync", "bundles")
 	base := "skillsync-bundle.skillsync"
 	if len(names) == 1 {
 		base = names[0] + ".skillsync"
 	}
-	return filepath.Join(dir, base)
+	return filepath.Join(dir, base), nil
+}
+
+// summarizeImport builds a status line that distinguishes installed skills
+// from per-skill failures and warnings, so a partial import is never reported
+// as a full success.
+func summarizeImport(results []importResultLine) string {
+	var installed, failed, other int
+	for _, r := range results {
+		switch r.status {
+		case "installed", "overwritten":
+			installed++
+		case "failed":
+			failed++
+		default: // skipped, warning, etc.
+			other++
+		}
+	}
+	msg := fmt.Sprintf("Imported %d skill(s)", installed)
+	if failed > 0 {
+		msg += fmt.Sprintf(", %d failed", failed)
+	}
+	if other > 0 {
+		msg += fmt.Sprintf(", %d warning(s)", other)
+	}
+	return msg
 }
 
 // exportBundleCmd exports the named vault skills to dest off the UI goroutine.
@@ -1102,6 +1138,7 @@ func (m Model) handleBundleImportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.bundleImportIn.Blur()
 		m.Screen = ScreenStorage
+		m.StatusMsg = "Importing bundle…"
 		return m, m.importBundleCmd(path, m.rootPath)
 	}
 
