@@ -353,6 +353,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleInstallerKeys(msg)
 	case ScreenStorage:
 		return m.handleStorageKeys(msg)
+	case ScreenBundleImport:
+		return m.handleBundleImportKeys(msg)
 	case ScreenProjects:
 		return m.handleProjectsKeys(msg)
 	case ScreenDeleteConfirm:
@@ -1039,6 +1041,12 @@ func (m Model) handleStorageKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, m.exportBundleCmd(names, bundleDestPath(names))
+	case "m":
+		m.bundleImportIn.SetValue("")
+		m.bundleImportIn.Focus()
+		m.PrevScreen = m.Screen
+		m.Screen = ScreenBundleImport
+		return m, nil
 	}
 
 	var cmd tea.Cmd
@@ -1075,6 +1083,46 @@ func (m Model) exportBundleCmd(names []string, dest string) tea.Cmd {
 	return func() tea.Msg {
 		path, err := backend.ExportBundle(names, dest)
 		return bundleExportedMsg{path: path, err: err}
+	}
+}
+
+// handleBundleImportKeys drives the bundle import screen: esc returns to the
+// vault, enter imports the entered path, and other keys edit the path input.
+func (m Model) handleBundleImportKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.bundleImportIn.Blur()
+		m.Screen = ScreenStorage
+		return m, nil
+	case tea.KeyEnter:
+		path := strings.TrimSpace(m.bundleImportIn.Value())
+		if path == "" {
+			m.StatusMsg = "Enter a .skillsync bundle path"
+			return m, nil
+		}
+		m.bundleImportIn.Blur()
+		m.Screen = ScreenStorage
+		return m, m.importBundleCmd(path, m.rootPath)
+	}
+
+	var cmd tea.Cmd
+	m.bundleImportIn, cmd = m.bundleImportIn.Update(msg)
+	return m, cmd
+}
+
+// importBundleCmd installs a .skillsync bundle into projectRoot off the UI goroutine.
+func (m Model) importBundleCmd(path, projectRoot string) tea.Cmd {
+	backend := m.backend
+	return func() tea.Msg {
+		results, err := backend.ImportBundle(path, projectRoot)
+		if err != nil {
+			return bundleImportedMsg{err: err}
+		}
+		lines := make([]importResultLine, 0, len(results))
+		for _, r := range results {
+			lines = append(lines, importResultLine{skill: r.Skill, status: r.Status})
+		}
+		return bundleImportedMsg{results: lines}
 	}
 }
 

@@ -310,10 +310,30 @@ func TestViewportScrollInList(t *testing.T) {
 	}
 }
 
+// repoRootDir walks up from the current directory until it finds go.mod,
+// returning the module root. Robust across normal checkouts and git worktrees.
+func repoRootDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("go.mod not found walking up from test dir")
+		}
+		dir = parent
+	}
+}
+
 func TestLoadSkills_VirtualInjection(t *testing.T) {
 	// Setup: Create agents.md in root
 	m := NewModel(NewBackend(storage.NewService("")))
-	m.rootPath = "../../.." // relative to internal/ui
+	m.rootPath = repoRootDir(t) // module root, robust across worktrees
 
 	// We need to mock the filesystem or just rely on actual file for this run
 	// Since I'm in the real environment, I'll check if it exists

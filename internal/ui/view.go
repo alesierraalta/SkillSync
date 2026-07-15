@@ -49,6 +49,10 @@ func (m Model) View() string {
 
 		content = m.storageView()
 
+	case ScreenBundleImport:
+
+		content = m.bundleImportView()
+
 	case ScreenProjects:
 
 		content = m.projectsView()
@@ -245,7 +249,42 @@ func (m Model) storageView() string {
 	if len(m.storedSkills) == 0 {
 		return s + lipgloss.NewStyle().MarginLeft(4).Render("No hay skills almacenadas.\nPresioná 's' en la vista de gestión para guardar una.")
 	}
-	return s + docStyle.Render(m.storageList.View())
+	if m.selectMode {
+		return s + m.storageSelectView()
+	}
+	hint := hintStyle.Render("space: seleccionar · m: importar bundle")
+	return s + hint + "\n\n" + docStyle.Render(m.storageList.View())
+}
+
+// storageSelectView renders the vault as a checklist with a cursor and
+// [x]/[ ] markers while multi-select is active.
+func (m Model) storageSelectView() string {
+	var b strings.Builder
+	b.WriteString(hintStyle.Render("space: (des)seleccionar · e: exportar selección · m: importar · esc: salir") + "\n\n")
+	idx := m.storageList.Index()
+	for i, sk := range m.storedSkills {
+		name := sk.Metadata.SkillName
+		cursor := "  "
+		if i == idx {
+			cursor = "> "
+		}
+		marker := "[ ]"
+		if m.vaultSelected[name] {
+			marker = "[x]"
+		}
+		b.WriteString(fmt.Sprintf("%s%s %s\n", cursor, marker, name))
+	}
+	b.WriteString(fmt.Sprintf("\n%d seleccionada(s)", len(m.selectedVaultNames())))
+	return docStyle.Render(b.String())
+}
+
+// bundleImportView renders the .skillsync import screen with a path input.
+func (m Model) bundleImportView() string {
+	s := titleStyle.Render("Importar Bundle .skillsync") + "\n\n"
+	body := "Ingresá la ruta del bundle a instalar en este proyecto:\n\n" +
+		m.bundleImportIn.View() + "\n\n" +
+		hintStyle.Render("enter: importar · esc: cancelar")
+	return s + docStyle.Render(body)
 }
 
 func (m Model) projectsView() string {
