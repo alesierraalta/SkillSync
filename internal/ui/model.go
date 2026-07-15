@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"skillsync/tui/internal/agentdetect"
 	"skillsync/tui/internal/runner"
@@ -45,6 +46,7 @@ const (
 	ScreenMCPServersMenu
 	ScreenGlobalSkillsCats
 	ScreenGlobalSkillsList
+	ScreenBundleImport
 )
 
 type Model struct {
@@ -95,6 +97,11 @@ type Model struct {
 	globalCategoryCursor int
 	globalSkillsLoaded   bool
 	globalSkillsErr      error
+
+	// Vault selection / bundle state
+	selectMode     bool            // multi-select active in Global Skills
+	vaultSelected  map[string]bool // selected vault skill names
+	bundleImportIn textinput.Model // path input on the import screen
 }
 
 type globalSkillItem struct {
@@ -212,6 +219,10 @@ func NewModel(backend AppService) Model {
 	gl := list.New([]list.Item{}, glDelegate, 0, 0)
 	gl.Title = "Global Skills"
 
+	importIn := textinput.New()
+	importIn.Placeholder = "path/to/bundle.skillsync"
+	importIn.Prompt = "> "
+
 	return Model{
 		Screen:           ScreenHome,
 		PrevScreen:       ScreenHome,
@@ -224,6 +235,8 @@ func NewModel(backend AppService) Model {
 		List:             NewListModel(backend, "."),
 		deleteConfirm:    NewDeleteConfirmModel(backend),
 		backend:          backend,
+		vaultSelected:    make(map[string]bool),
+		bundleImportIn:   importIn,
 	}
 }
 

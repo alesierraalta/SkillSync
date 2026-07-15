@@ -238,6 +238,11 @@ func (b *Backend) RemoveSkill(name string, opts remove.Options) error {
 // ExportBundle writes the named vault skills to a .skillsync bundle at destPath.
 // The vault is the same storage path the backend already manages.
 func (b *Backend) ExportBundle(names []string, destPath string) (string, error) {
+	if destPath != "" {
+		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+			return "", fmt.Errorf("create bundle dir: %w", err)
+		}
+	}
 	v := vault.NewServiceWithRoot(b.storage.RootPath)
 	return bundle.Export(v, names, destPath)
 }

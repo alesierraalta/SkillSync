@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -61,6 +62,24 @@ type installerFinishedMsg struct {
 }
 
 type storedSkillsLoadedMsg []storage.StoredSkill
+
+// bundleExportedMsg reports the outcome of an ExportBundle command.
+type bundleExportedMsg struct {
+	path string
+	err  error
+}
+
+// bundleImportedMsg reports the outcome of an ImportBundle command.
+type bundleImportedMsg struct {
+	results []importResultLine
+	err     error
+}
+
+// importResultLine is a view-friendly copy of a per-skill import result.
+type importResultLine struct {
+	skill  string
+	status string
+}
 type projectsLoadedMsg []storage.ProjectInfo
 type statusMsg string
 
@@ -221,6 +240,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.StatusMsg = "Instalación completada con éxito"
 		m.Screen = ScreenHome
 		return m, m.loadSkills()
+
+	case bundleExportedMsg:
+		if msg.err != nil {
+			m.StatusMsg = fmt.Sprintf("Export failed: %v", msg.err)
+		} else {
+			m.StatusMsg = fmt.Sprintf("Exported bundle to %s", msg.path)
+			m.vaultSelected = make(map[string]bool)
+			m.selectMode = false
+		}
+		return m, nil
+
+	case bundleImportedMsg:
+		if msg.err != nil {
+			m.StatusMsg = fmt.Sprintf("Import failed: %v", msg.err)
+		} else {
+			m.StatusMsg = fmt.Sprintf("Imported %d skill(s)", len(msg.results))
+		}
+		return m, nil
 
 	case storedSkillsLoadedMsg:
 		var items []list.Item
@@ -981,11 +1018,64 @@ func (m Model) handleStorageKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+	case " ":
+		if itm, ok := m.storageList.SelectedItem().(storageItem); ok {
+			name := itm.stored.Metadata.SkillName
+			if m.vaultSelected == nil {
+				m.vaultSelected = make(map[string]bool)
+			}
+			if m.vaultSelected[name] {
+				delete(m.vaultSelected, name)
+			} else {
+				m.vaultSelected[name] = true
+			}
+			m.selectMode = len(m.vaultSelected) > 0
+			return m, nil
+		}
+	case "e":
+		names := m.selectedVaultNames()
+		if len(names) == 0 {
+			m.StatusMsg = "No skills selected — press space to select, then e to export"
+			return m, nil
+		}
+		return m, m.exportBundleCmd(names, bundleDestPath(names))
 	}
 
 	var cmd tea.Cmd
 	m.storageList, cmd = m.storageList.Update(msg)
 	return m, cmd
+}
+
+// selectedVaultNames returns the selected vault skill names in stable order.
+func (m Model) selectedVaultNames() []string {
+	names := make([]string, 0, len(m.vaultSelected))
+	for name, sel := range m.vaultSelected {
+		if sel {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
+}
+
+// bundleDestPath builds the default export path under ~/.skillsync/bundles/.
+func bundleDestPath(names []string) string {
+	home, _ := os.UserHomeDir()
+	dir := filepath.Join(home, ".skillsync", "bundles")
+	base := "skillsync-bundle.skillsync"
+	if len(names) == 1 {
+		base = names[0] + ".skillsync"
+	}
+	return filepath.Join(dir, base)
+}
+
+// exportBundleCmd exports the named vault skills to dest off the UI goroutine.
+func (m Model) exportBundleCmd(names []string, dest string) tea.Cmd {
+	backend := m.backend
+	return func() tea.Msg {
+		path, err := backend.ExportBundle(names, dest)
+		return bundleExportedMsg{path: path, err: err}
+	}
 }
 
 func (m Model) handleDeleteConfirmKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
