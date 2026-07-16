@@ -349,6 +349,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSyncingKeys(msg)
 	case ScreenContentView:
 		return m.handleContentViewKeys(msg)
+	case ScreenSkillFiles:
+		return m.handleSkillFilesKeys(msg)
 	case ScreenInstaller:
 		return m.handleInstallerKeys(msg)
 	case ScreenStorage:
@@ -773,6 +775,8 @@ func (m Model) handleContentViewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.setupInputs()
 			return m, nil
 		}
+	case "f":
+		return m.openSkillFileBrowser()
 	case "j", "k", "up", "down", "pgup", "pgdown":
 		var cmd tea.Cmd
 		m.List.viewport, cmd = m.List.viewport.Update(msg)
