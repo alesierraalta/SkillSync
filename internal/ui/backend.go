@@ -37,6 +37,7 @@ type AppService interface {
 	GetProjects() ([]storage.ProjectInfo, error)
 	SaveToStorage(skill *types.Skill, metadata storage.StoredMetadata) error
 	LoadFromStorage(id string) (string, error)
+	CopyStorageExtras(id, dstDir string) error
 
 	InstallCoreSkill(name string) error
 	RegisterOpenCodeTools() error
@@ -133,6 +134,10 @@ func (b *Backend) SaveToStorage(skill *types.Skill, metadata storage.StoredMetad
 
 func (b *Backend) LoadFromStorage(id string) (string, error) {
 	return b.storage.Load(id)
+}
+
+func (b *Backend) CopyStorageExtras(id, dstDir string) error {
+	return b.storage.CopyExtras(id, dstDir)
 }
 
 func (b *Backend) InstallCoreSkill(name string) error {
