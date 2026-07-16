@@ -1339,6 +1339,15 @@ func (m Model) installFromStorageAndSyncCmd(stored storage.StoredSkill) tea.Cmd 
 			}
 		}
 
+		// Restore supporting files (references/, assets/, ...) stored
+		// alongside SKILL.md in global storage.
+		if err := m.backend.CopyStorageExtras(stored.ID, skillDir); err != nil {
+			return runner.SyncResult{
+				ExitCode: 1,
+				Stderr:   fmt.Sprintf("Failed to copy skill files: %v", err),
+			}
+		}
+
 		skillPath := filepath.Join(skillDir, "SKILL.md")
 		if err := os.WriteFile(skillPath, []byte(content), 0644); err != nil {
 			return runner.SyncResult{

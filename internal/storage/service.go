@@ -69,6 +69,21 @@ func (s *Service) Save(skill *types.Skill, metadata StoredMetadata) error {
 		return fmt.Errorf("failed to save METADATA.json: %w", err)
 	}
 
+	// Copy supporting files (references/, assets/, ...) from the skill's
+	// source directory so the stored skill is self-contained.
+	if skill.Path != "" {
+		srcDir := filepath.Dir(skill.Path)
+		if absSrc, aerr := filepath.Abs(srcDir); aerr == nil {
+			if absDst, derr := filepath.Abs(skillDir); derr == nil && absSrc != absDst {
+				if _, serr := os.Stat(srcDir); serr == nil {
+					if err := copyTree(srcDir, skillDir); err != nil {
+						return fmt.Errorf("failed to copy skill files: %w", err)
+					}
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
