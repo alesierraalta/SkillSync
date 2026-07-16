@@ -10,7 +10,11 @@ import (
 // DiscoverSkills finds all SKILL.md files in known provider directories in the root path.
 func DiscoverSkills(root string) ([]string, error) {
 	var skills []string
-	providers := []string{".claude", ".opencode", ".agents", ".gemini", ".cursor", ".copilot", ".qwen"}
+	providers := []string{".claude", ".opencode", ".agents", ".gemini", ".cursor", ".copilot", ".qwen",
+		// OpenCode stores global skills under ~/.config/opencode (same dir
+		// agentdetect uses to detect OpenCode via opencode.json).
+		filepath.Join(".config", "opencode"),
+	}
 
 	for _, provider := range providers {
 		providerPath := filepath.Join(root, provider)

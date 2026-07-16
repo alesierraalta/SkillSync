@@ -570,6 +570,9 @@ func categoryToProviderFolders(category string) []string {
 	switch category {
 	case "Antigravity":
 		return []string{".gemini/antigravity"}
+	case "OpenCode":
+		// OpenCode skills live both in ~/.opencode and ~/.config/opencode.
+		return []string{".opencode", ".config/opencode"}
 	case "All":
 		return nil // sentinel: no filter, include every provider
 	default:
