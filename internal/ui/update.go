@@ -351,6 +351,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleContentViewKeys(msg)
 	case ScreenSkillFiles:
 		return m.handleSkillFilesKeys(msg)
+	case ScreenSkillMenu:
+		return m.handleSkillMenuKeys(msg)
 	case ScreenInstaller:
 		return m.handleInstallerKeys(msg)
 	case ScreenStorage:
@@ -534,7 +536,16 @@ func (m Model) handleGlobalSkillsListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.Screen = ScreenDeleteConfirm
 			return m, nil
 		}
-	case "enter", "v":
+	case "enter":
+		if m.globalSkillsList.FilterState() == list.Filtering {
+			break
+		}
+		if i, ok := m.globalSkillsList.SelectedItem().(globalSkillItem); ok {
+			sk := i.skill
+			m.selected = &sk
+			return m.openSkillMenu()
+		}
+	case "v":
 		if m.globalSkillsList.FilterState() == list.Filtering {
 			break
 		}
@@ -542,13 +553,7 @@ func (m Model) handleGlobalSkillsListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			sk := i.skill
 			m.selected = &sk
 
-			contentBytes, err := os.ReadFile(sk.Path)
-			if err != nil {
-				m.List.viewport.SetContent(fmt.Sprintf("Error reading file: %v", err))
-			} else {
-				m.List.viewport.SetContent(string(contentBytes))
-			}
-			m.List.viewport.GotoTop()
+			m.loadSelectedSkillContent()
 
 			m.PrevScreen = m.Screen
 			m.Screen = ScreenContentView
@@ -649,7 +654,11 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "enter", "v":
+	case "enter":
+		if m.List.selected != nil {
+			return m.openSkillMenu()
+		}
+	case "v":
 		if m.List.selected != nil {
 			m.PrevScreen = m.Screen
 			m.Screen = ScreenContentView

@@ -100,10 +100,10 @@ func TestScreenTransitions(t *testing.T) {
 		expectScreen Screen
 	}{
 		{
-			name:         "list to preview on enter",
+			name:         "list to skill menu on enter",
 			startScreen:  ScreenList,
 			msg:          tea.KeyMsg{Type: tea.KeyEnter},
-			expectScreen: ScreenContentView,
+			expectScreen: ScreenSkillMenu,
 		},
 		{
 			name:         "list to detail on e",
@@ -162,7 +162,7 @@ func TestScreenTransitions(t *testing.T) {
 			m.PrevScreen = ScreenList
 
 			// Mock list selection for enter
-			if tt.startScreen == ScreenList && (tt.expectScreen == ScreenDetail || tt.expectScreen == ScreenContentView) {
+			if tt.startScreen == ScreenList && (tt.expectScreen == ScreenDetail || tt.expectScreen == ScreenContentView || tt.expectScreen == ScreenSkillMenu) {
 				m.List.list.SetItems([]list.Item{item{}})
 				m.List.selected = &types.Skill{}
 			}
@@ -370,9 +370,9 @@ func TestHandleListKeys_Matrix(t *testing.T) {
 		expectScreen Screen
 	}{
 		{
-			name:         "Enter goes to Preview (ScreenContentView)",
+			name:         "Enter opens skill action menu",
 			key:          "enter",
-			expectScreen: ScreenContentView,
+			expectScreen: ScreenSkillMenu,
 		},
 		{
 			name:         "v goes to Preview (ScreenContentView)",
