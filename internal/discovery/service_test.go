@@ -359,3 +359,25 @@ func TestScanProjects(t *testing.T) {
 		}
 	})
 }
+
+func TestDiscoverSkillsConfigOpenCode(t *testing.T) {
+	tmp := t.TempDir()
+
+	// OpenCode stores global skills under ~/.config/opencode/skills
+	skillPath := filepath.Join(tmp, ".config", "opencode", "skills", "my-skill", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(skillPath, []byte("# Skill"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	found, err := DiscoverSkills(tmp)
+	if err != nil {
+		t.Fatalf("DiscoverSkills failed: %v", err)
+	}
+
+	if len(found) != 1 || found[0] != skillPath {
+		t.Errorf("Expected [%s], got %v", skillPath, found)
+	}
+}
