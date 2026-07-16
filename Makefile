@@ -12,7 +12,7 @@ lint:
 		(echo "golangci-lint not installed; lint skipped" && true)
 
 build:
-	go build ./cmd/...
+	go build ./cmd/synck
 
 verify: test lint build
 	@echo "verify ok"

@@ -48,6 +48,7 @@ const (
 	ScreenGlobalSkillsList
 	ScreenBundleImport
 	ScreenSkillFiles
+	ScreenSkillMenu
 )
 
 type Model struct {
@@ -104,6 +105,10 @@ type Model struct {
 	skillFiles       []string
 	skillFilesCursor int
 	skillFilesOrigin Screen
+
+	// Skill action submenu state
+	skillMenuCursor int
+	skillMenuOrigin Screen
 
 	// Vault selection / bundle state
 	selectMode     bool            // multi-select active in Global Skills
@@ -287,6 +292,12 @@ func (m Model) GetKeyBindings() []KeyBinding {
 		return []KeyBinding{
 			{Key: "esc", Help: "back"},
 			{Key: "enter", Help: "view file"},
+			{Key: "j/k", Help: "navigate"},
+		}
+	case ScreenSkillMenu:
+		return []KeyBinding{
+			{Key: "esc", Help: "back"},
+			{Key: "enter", Help: "select"},
 			{Key: "j/k", Help: "navigate"},
 		}
 	case ScreenInstaller:

@@ -6,7 +6,7 @@ Thank you for your interest in improving Skillsync TUI!
 
 1. **Clone the Repo**: Ensure you have Go 1.21+ installed.
 2. **Install Dependencies**: `go mod download`.
-3. **Run the TUI**: `go run ./cmd/tui`.
+3. **Run the TUI**: `go run ./cmd/synck`.
 4. **Explore the Docs**: Read `docs/architecture.md` to understand the layout.
 
 ## Development Install Workflow
