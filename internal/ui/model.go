@@ -49,6 +49,7 @@ const (
 	ScreenBundleImport
 	ScreenSkillFiles
 	ScreenSkillMenu
+	ScreenSyncProviders
 )
 
 type Model struct {
@@ -109,6 +110,10 @@ type Model struct {
 	// Skill action submenu state
 	skillMenuCursor int
 	skillMenuOrigin Screen
+
+	// Sync provider selection state
+	syncProviderSel    []bool
+	syncProviderCursor int
 
 	// Vault selection / bundle state
 	selectMode     bool            // multi-select active in Global Skills
@@ -272,7 +277,7 @@ func (m Model) GetKeyBindings() []KeyBinding {
 			{Key: "v", Help: "preview"},
 			{Key: "e", Help: "edit skill"},
 			{Key: "s", Help: "save globally"},
-			{Key: "y", Help: "sync"},
+			{Key: "y", Help: "sync (choose providers)"},
 			{Key: "d", Help: "delete skill"},
 			{Key: "o", Help: "open folder"},
 		}
@@ -299,6 +304,13 @@ func (m Model) GetKeyBindings() []KeyBinding {
 		return []KeyBinding{
 			{Key: "esc", Help: "back"},
 			{Key: "enter", Help: "select"},
+			{Key: "j/k", Help: "navigate"},
+		}
+	case ScreenSyncProviders:
+		return []KeyBinding{
+			{Key: "esc", Help: "cancel"},
+			{Key: "space", Help: "toggle provider"},
+			{Key: "enter", Help: "sync"},
 			{Key: "j/k", Help: "navigate"},
 		}
 	case ScreenInstaller:

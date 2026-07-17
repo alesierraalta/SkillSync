@@ -31,6 +31,7 @@ type MockAppService struct {
 	SaveToStorageFunc             func(skill *types.Skill, metadata storage.StoredMetadata) error
 	LoadFromStorageFunc           func(id string) (string, error)
 	CopyStorageExtrasFunc         func(id, dstDir string) error
+	SyncToProvidersFunc           func(root string, providerDirs []string) error
 	InstallCoreSkillFunc          func(name string) error
 	RegisterOpenCodeToolsFunc     func() error
 	RegisterSkillManagerAgentFunc func() error
@@ -93,6 +94,13 @@ func (m *MockAppService) LoadFromStorage(id string) (string, error) {
 func (m *MockAppService) CopyStorageExtras(id, dstDir string) error {
 	if m.CopyStorageExtrasFunc != nil {
 		return m.CopyStorageExtrasFunc(id, dstDir)
+	}
+	return nil
+}
+
+func (m *MockAppService) SyncToProviders(root string, providerDirs []string) error {
+	if m.SyncToProvidersFunc != nil {
+		return m.SyncToProvidersFunc(root, providerDirs)
 	}
 	return nil
 }
