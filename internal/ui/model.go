@@ -114,6 +114,9 @@ type Model struct {
 	// Sync provider selection state
 	syncProviderSel    []bool
 	syncProviderCursor int
+	// pendingStored, when set, is a vault skill to install into the project
+	// as part of the next provider-targeted sync (storage "i" flow).
+	pendingStored *storage.StoredSkill
 
 	// Vault selection / bundle state
 	selectMode     bool            // multi-select active in Global Skills

@@ -192,16 +192,17 @@ func TestHandleStorageKeys_InstallShortcut(t *testing.T) {
 	m.storageList.SetItems(items)
 	m.storageList.Select(0)
 
-	// Press 'i'
+	// Press 'i' — now routes through the provider selector, remembering the
+	// stored skill to install as part of the targeted sync.
 	msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("i")}
-	newModel, cmd := m.Update(msg)
+	newModel, _ := m.Update(msg)
 	res := newModel.(Model)
 
-	if res.Screen != ScreenSyncing {
-		t.Errorf("expected ScreenSyncing, got %v", res.Screen)
+	if res.Screen != ScreenSyncProviders {
+		t.Errorf("expected ScreenSyncProviders, got %v", res.Screen)
 	}
-	if cmd == nil {
-		t.Error("expected a command to be returned, got nil")
+	if res.pendingStored == nil || res.pendingStored.ID != "skill1" {
+		t.Errorf("expected pendingStored to be set to the selected skill")
 	}
 }
 

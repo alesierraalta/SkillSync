@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"skillsync/tui/internal/runner"
+	"skillsync/tui/internal/storage"
 	"skillsync/tui/internal/syncengine"
 )
 
@@ -81,10 +84,12 @@ func (m Model) handleSyncProvidersKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.StatusMsg = "Select at least one provider (space to toggle)"
 			return m, nil
 		}
+		cmd := m.syncToSelectedProvidersCmd()
+		m.pendingStored = nil // consumed by the command closure
 		m.Screen = ScreenSyncing
 		m.SyncFailed = false
 		m.SyncFinished = false
-		return m, m.syncToSelectedProvidersCmd()
+		return m, cmd
 	}
 	return m, nil
 }
@@ -103,14 +108,52 @@ func (m Model) selectedProviderDirs() []string {
 func (m Model) syncToSelectedProvidersCmd() tea.Cmd {
 	root := m.rootPath
 	providers := m.selectedProviderDirs()
+	pending := m.pendingStored
 	return func() tea.Msg {
 		_ = m.backend.InstallCoreSkill("skill-sync") // non-fatal
 		_ = m.backend.EnsureAgentsMD(root)           // non-fatal
+
+		// Storage "i" flow: materialize the vault skill into .agents/skills
+		// before mirroring, so the provider mirror picks it up.
+		if pending != nil {
+			if err := m.installStoredToProject(*pending, root); err != nil {
+				return syncReportMsg{report: &runner.SyncReport{}, err: err}
+			}
+		}
+
 		_ = m.backend.SyncToProviders(root, providers)
 
 		report, err := m.backend.Sync(root, syncengine.SyncOptions{})
 		return syncReportMsg{report: report, err: err}
 	}
+}
+
+// installStoredToProject writes a vault skill (SKILL.md plus references/assets)
+// into <root>/.agents/skills/<name>. Shared by the storage "i" install path.
+func (m Model) installStoredToProject(stored storage.StoredSkill, root string) error {
+	content, err := m.backend.LoadFromStorage(stored.ID)
+	if err != nil {
+		return fmt.Errorf("load skill from storage: %w", err)
+	}
+	skill, err := m.backend.ParseSkillContent(content)
+	if err != nil {
+		return fmt.Errorf("malformed skill: %w", err)
+	}
+	name := skill.Name
+	if name == "" {
+		name = stored.Metadata.SkillName
+	}
+	skillDir := filepath.Join(root, ".agents", "skills", name)
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return fmt.Errorf("create skill dir: %w", err)
+	}
+	if err := m.backend.CopyStorageExtras(stored.ID, skillDir); err != nil {
+		return fmt.Errorf("copy skill files: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0644); err != nil {
+		return fmt.Errorf("write SKILL.md: %w", err)
+	}
+	return nil
 }
 
 func (m Model) viewSyncProviders() string {
