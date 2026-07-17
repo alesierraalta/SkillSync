@@ -8,10 +8,12 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -90,10 +92,32 @@ func (m Model) loadSkills() tea.Cmd {
 			return errorMsg(err)
 		}
 
+		// Parse skills concurrently: with many skills, sequential file reads +
+		// YAML parsing dominate load time. Bound concurrency to the CPU count
+		// and preserve discovery order.
+		parsed := make([]*types.Skill, len(paths))
+		var wg sync.WaitGroup
+		workers := runtime.NumCPU()
+		if workers < 1 {
+			workers = 1
+		}
+		sem := make(chan struct{}, workers)
+		for idx, p := range paths {
+			wg.Add(1)
+			go func(idx int, p string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				if s, err := m.backend.ParseSkill(p); err == nil {
+					parsed[idx] = s
+				}
+			}(idx, p)
+		}
+		wg.Wait()
+
 		var skills []types.Skill
-		for _, p := range paths {
-			s, err := m.backend.ParseSkill(p)
-			if err == nil {
+		for _, s := range parsed {
+			if s != nil {
 				skills = append(skills, *s)
 			}
 		}
@@ -161,8 +185,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case skillsLoadedMsg:
+		m.skillsLoading = false
 		newModel, cmd := m.List.Update(msg)
 		m.List = newModel.(ListModel)
+		return m, cmd
+
+	case spinner.TickMsg:
+		if !m.skillsLoading {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
 	case tea.WindowSizeMsg:
@@ -322,7 +355,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.globalSkillsLoaded = false
 				return m, m.loadGlobalSkillsCmd(m.globalCategory)
 			}
-			return m, m.loadSkills()
+			return m, m.beginLoadSkills()
 		}
 		// On error, stay on confirm screen to show error
 		return m, nil
@@ -401,7 +434,7 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.loadStoredSkillsCmd()
 		} else if m.HomeCursor == 1 {
 			m.Screen = ScreenList
-			return m, m.loadSkills()
+			return m, m.beginLoadSkills()
 		} else if m.HomeCursor == 2 {
 			m.Screen = ScreenStorage
 			return m, m.loadStoredSkillsCmd()
@@ -431,7 +464,7 @@ func (m Model) handleHomeKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "2":
 		m.HomeCursor = 1
 		m.Screen = ScreenList
-		return m, m.loadSkills()
+		return m, m.beginLoadSkills()
 	case "3":
 		m.HomeCursor = 2
 		m.Screen = ScreenStorage
