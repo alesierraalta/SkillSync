@@ -36,7 +36,17 @@ func DiscoverSkills(root string) ([]string, error) {
 				skillFile := filepath.Join(path, "SKILL.md")
 				if _, err := os.Stat(skillFile); err == nil {
 					skills = append(skills, skillFile)
-					return filepath.SkipDir
+					// Only SkipDir on a real directory: WalkDir reports a
+					// symlink/junction as a NON-directory DirEntry, and per
+					// filepath.WalkDir semantics returning SkipDir on a
+					// non-directory skips the REMAINING SIBLINGS in the
+					// containing folder — silently truncating discovery once a
+					// junction skill is hit. WalkDir does not descend into
+					// symlinks/junctions anyway, so returning nil is safe.
+					if d.IsDir() {
+						return filepath.SkipDir
+					}
+					return nil
 				}
 			}
 			return nil
