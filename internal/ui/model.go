@@ -223,7 +223,13 @@ func (i item) Description() string {
 	if desc == "" {
 		desc = "Sin descripción"
 	}
-	return wordwrap.String(desc, 70)
+	wrapped := wordwrap.String(desc, 70)
+	// Show the full skill directory (like the Global Skills view) so the
+	// provider location is explicit, not just the "[.claude]" flag.
+	if i.skill.Path != "" {
+		return fmt.Sprintf("Path: %s\n%s", i.skill.Path, wrapped)
+	}
+	return wrapped
 }
 func (i item) FilterValue() string { return i.skill.Name }
 
