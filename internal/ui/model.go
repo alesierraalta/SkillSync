@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/progress"
+	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -53,21 +54,23 @@ const (
 )
 
 type Model struct {
-	Screen       Screen
-	PrevScreen   Screen
-	Width        int
-	Height       int
-	HomeCursor   int
-	StatusMsg    string
-	Progress     progress.Model
-	SyncFailed   bool
-	SyncFinished bool
-	syncReport   *runner.SyncReport
-	err          error
-	rootPath     string
-	inputs       []textarea.Model
-	syncOutput   string
-	selected     *types.Skill
+	Screen        Screen
+	PrevScreen    Screen
+	Width         int
+	Height        int
+	HomeCursor    int
+	StatusMsg     string
+	Progress      progress.Model
+	spinner       spinner.Model
+	skillsLoading bool
+	SyncFailed    bool
+	SyncFinished  bool
+	syncReport    *runner.SyncReport
+	err           error
+	rootPath      string
+	inputs        []textarea.Model
+	syncOutput    string
+	selected      *types.Skill
 
 	// Sub-models
 	Installer InstallerModel
@@ -267,6 +270,8 @@ func NewModel(backend AppService) Model {
 		globalSkillsList: gl,
 		rootPath:         ".",
 		Progress:         progress.New(progress.WithDefaultGradient()),
+		spinner:          newSkillsSpinner(),
+		skillsLoading:    true,
 		Installer:        NewInstallerModel(backend, "."),
 		List:             NewListModel(backend, "."),
 		deleteConfirm:    NewDeleteConfirmModel(backend),
@@ -408,7 +413,9 @@ func (m Model) GetKeyBindings() []KeyBinding {
 }
 
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.List.Init(), m.loadSkills(), instantiateEcosystemCmd(m.backend, m.rootPath))
+	// skillsLoading is seeded true in NewModel so the very first list view shows
+	// the spinner; the tick animates it until skillsLoadedMsg arrives.
+	return tea.Batch(m.List.Init(), m.loadSkills(), m.spinner.Tick, instantiateEcosystemCmd(m.backend, m.rootPath))
 }
 
 // isCoreSkill returns true if the given skill name is protected.

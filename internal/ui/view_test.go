@@ -44,6 +44,7 @@ func TestViewGolden(t *testing.T) {
 				m.setupInputs()
 			}
 			if tt.screen == ScreenList {
+				m.skillsLoading = false
 				m.List.list.SetItems([]list.Item{item{skill: types.Skill{
 					Name:    "Markdown Skill",
 					Prefix:  "# Welcome\n",
@@ -194,6 +195,7 @@ func TestInstallerOptions_ModeLabelsFitNarrowColumn(t *testing.T) {
 func TestSplitView_ShowsStatusMsg(t *testing.T) {
 	m := NewModel(NewBackend(storage.NewService("")))
 	m.Screen = ScreenList
+	m.skillsLoading = false
 
 	// Set dimensions via WindowSizeMsg
 	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})

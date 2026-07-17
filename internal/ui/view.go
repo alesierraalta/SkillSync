@@ -27,7 +27,11 @@ func (m Model) View() string {
 
 	case ScreenList:
 
-		content = m.List.View()
+		if m.skillsLoading {
+			content = m.loadingView()
+		} else {
+			content = m.List.View()
+		}
 
 	case ScreenDetail:
 

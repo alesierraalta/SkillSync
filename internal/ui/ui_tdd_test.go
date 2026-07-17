@@ -309,6 +309,7 @@ func TestModel_ViewDelegation(t *testing.T) {
 
 	t.Run("Delegates to ListModel View", func(t *testing.T) {
 		m.Screen = ScreenList
+		m.skillsLoading = false
 		view := m.View()
 		if !strings.Contains(view, "Search skills...") {
 			t.Errorf("expected List view content (search placeholder), got %q", view)
