@@ -2,6 +2,7 @@ package ui
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -57,6 +58,40 @@ func TestSkillMenuOptions(t *testing.T) {
 				t.Fatalf("option %s: expected %v, got %v", tc.name, tc.want, nm.Screen)
 			}
 		})
+	}
+}
+
+func TestSkillMenuSaveToStorage(t *testing.T) {
+	m := menuTestModel(t)
+	m.Screen = ScreenSkillMenu
+	m.skillMenuOrigin = ScreenGlobalSkillsList
+	// Save option is the last entry in the menu.
+	m.skillMenuCursor = len(skillMenuOptions) - 1
+	if skillMenuOptions[m.skillMenuCursor] == "" {
+		t.Fatal("no menu options")
+	}
+
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	nm := next.(Model)
+
+	// Selecting save returns to the origin screen and issues a save command.
+	if nm.Screen != ScreenGlobalSkillsList {
+		t.Fatalf("expected return to ScreenGlobalSkillsList, got %v", nm.Screen)
+	}
+	if cmd == nil {
+		t.Fatal("expected a save command, got nil")
+	}
+}
+
+func TestSkillMenuHasSaveOption(t *testing.T) {
+	found := false
+	for _, opt := range skillMenuOptions {
+		if strings.Contains(strings.ToLower(opt), "storage") || strings.Contains(strings.ToLower(opt), "almacen") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a save-to-storage option in menu, got %v", skillMenuOptions)
 	}
 }
 

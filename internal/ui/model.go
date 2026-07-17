@@ -268,7 +268,8 @@ func (m Model) GetKeyBindings() []KeyBinding {
 	case ScreenList:
 		return []KeyBinding{
 			{Key: "q", Help: "quit"},
-			{Key: "enter", Help: "preview"},
+			{Key: "enter", Help: "actions"},
+			{Key: "v", Help: "preview"},
 			{Key: "e", Help: "edit skill"},
 			{Key: "s", Help: "save globally"},
 			{Key: "y", Help: "sync"},
@@ -368,7 +369,8 @@ func (m Model) GetKeyBindings() []KeyBinding {
 	case ScreenGlobalSkillsList:
 		return []KeyBinding{
 			{Key: "esc/q", Help: "back"},
-			{Key: "enter", Help: "preview"},
+			{Key: "enter", Help: "actions"},
+			{Key: "v", Help: "preview"},
 			{Key: "d", Help: "delete skill"},
 			{Key: "o", Help: "open folder"},
 		}

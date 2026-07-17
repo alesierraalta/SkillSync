@@ -14,6 +14,7 @@ var skillMenuOptions = []string{
 	"Preview content",
 	"Edit skill",
 	"Browse files (references, assets, ...)",
+	"Save to global storage",
 }
 
 // openSkillMenu switches to the skill action submenu, remembering the list
@@ -77,6 +78,13 @@ func (m Model) handleSkillMenuKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.loadSelectedSkillContent()
 			m.PrevScreen = ScreenSkillMenu
 			return m.openSkillFileBrowser()
+		case 3: // Save to global storage
+			// Copies SKILL.md plus references/assets into the vault (see
+			// saveToStorageCmd → storage.Save). Return to the launching
+			// screen; the status message reports the result.
+			cmd := m.saveToStorageCmd()
+			m.Screen = m.skillMenuOrigin
+			return m, cmd
 		}
 	}
 	return m, nil
