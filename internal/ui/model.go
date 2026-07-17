@@ -224,10 +224,15 @@ func (i item) Description() string {
 		desc = "Sin descripción"
 	}
 	wrapped := wordwrap.String(desc, 70)
-	// Show the full skill directory (like the Global Skills view) so the
-	// provider location is explicit, not just the "[.claude]" flag.
+	// Show the absolute skill path so its project provenance is verifiable,
+	// plus a "(proyecto actual)" marker (these come from the current project's
+	// rootPath), not just the "[.claude]" flag.
 	if i.skill.Path != "" {
-		return fmt.Sprintf("Path: %s\n%s", i.skill.Path, wrapped)
+		abs, err := filepath.Abs(i.skill.Path)
+		if err != nil {
+			abs = i.skill.Path
+		}
+		return fmt.Sprintf("Path: %s (proyecto actual)\n%s", abs, wrapped)
 	}
 	return wrapped
 }
