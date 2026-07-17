@@ -1029,11 +1029,12 @@ func (m Model) handleStorageKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "i":
 		if itm, ok := m.storageList.SelectedItem().(storageItem); ok {
-			m.PrevScreen = m.Screen
-			m.Screen = ScreenSyncing
-			m.SyncFailed = false
-			m.SyncFinished = false
-			return m, m.installFromStorageAndSyncCmd(itm.stored)
+			// Install-from-vault now goes through the provider selector so
+			// the user chooses where the skill lands. openSyncProviders keeps
+			// PrevScreen = ScreenStorage (the "Installing Skill..." title).
+			stored := itm.stored
+			m.pendingStored = &stored
+			return m.openSyncProviders()
 		}
 	case "d":
 		if itm, ok := m.storageList.SelectedItem().(storageItem); ok {

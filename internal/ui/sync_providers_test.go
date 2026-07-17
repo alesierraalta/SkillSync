@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"skillsync/tui/internal/storage"
+	"skillsync/tui/internal/types"
 )
 
 func syncProvidersModel(t *testing.T) Model {
@@ -105,6 +106,43 @@ func TestSyncProvidersEscCancels(t *testing.T) {
 	nm2 := next2.(Model)
 	if nm2.Screen != ScreenList {
 		t.Errorf("expected esc to return to ScreenList, got %v", nm2.Screen)
+	}
+}
+
+func TestInstallStoredToProjectWritesTree(t *testing.T) {
+	storageDir := t.TempDir()
+	root := t.TempDir()
+	st := storage.NewService(storageDir)
+	m := NewModel(NewBackend(st))
+	m.rootPath = root
+
+	// Seed the vault: save a skill with a reference file.
+	srcDir := filepath.Join(t.TempDir(), "vault-skill")
+	if err := os.MkdirAll(filepath.Join(srcDir, "references"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	skillMD := "---\nname: vault-skill\ndescription: d\n---\n# Vault Skill"
+	if err := os.WriteFile(filepath.Join(srcDir, "SKILL.md"), []byte(skillMD), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(srcDir, "references", "r.md"), []byte("ref"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Save(&types.Skill{Name: "vault-skill", Path: filepath.Join(srcDir, "SKILL.md")},
+		storage.StoredMetadata{SkillName: "vault-skill"}); err != nil {
+		t.Fatal(err)
+	}
+
+	stored := storage.StoredSkill{ID: "vault-skill", Metadata: storage.StoredMetadata{SkillName: "vault-skill"}}
+	if err := m.installStoredToProject(stored, root); err != nil {
+		t.Fatalf("installStoredToProject failed: %v", err)
+	}
+
+	for _, rel := range []string{"SKILL.md", "references/r.md"} {
+		p := filepath.Join(root, ".agents", "skills", "vault-skill", filepath.FromSlash(rel))
+		if _, err := os.Stat(p); err != nil {
+			t.Errorf("expected %s installed, missing: %v", rel, err)
+		}
 	}
 }
 
