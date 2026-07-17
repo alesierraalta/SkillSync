@@ -587,6 +587,22 @@ func categoryToProviderFolders(category string) []string {
 	}
 }
 
+// categoryRootLabel builds the "Root:" indicator for a category by resolving
+// the same provider folders used to filter skills, so the label always
+// reflects every directory actually scanned (e.g. OpenCode spans both
+// ~/.opencode/skills and ~/.config/opencode/skills).
+func categoryRootLabel(category, homeDir string) string {
+	if category == "All" {
+		return filepath.Join(homeDir, ".*", "skills")
+	}
+	folders := categoryToProviderFolders(category)
+	roots := make([]string, 0, len(folders))
+	for _, f := range folders {
+		roots = append(roots, filepath.Join(homeDir, filepath.FromSlash(f), "skills"))
+	}
+	return strings.Join(roots, "  |  ")
+}
+
 func (m Model) loadGlobalSkillsCmd(category string) tea.Cmd {
 	return func() tea.Msg {
 		homeDir, err := os.UserHomeDir()
@@ -622,12 +638,7 @@ func (m Model) loadGlobalSkillsCmd(category string) tea.Cmd {
 			}
 			items = append(items, globalSkillItem{skill: *s, category: category})
 		}
-		var displayRoot string
-		if category == "All" {
-			displayRoot = filepath.Join(homeDir, ".*", "skills")
-		} else {
-			displayRoot = filepath.Join(homeDir, "."+strings.ToLower(category), "skills")
-		}
+		displayRoot := categoryRootLabel(category, homeDir)
 
 		return globalSkillsLoadedMsg{items: items, title: fmt.Sprintf("Global Skills: %s (Root: %s)", category, displayRoot)}
 	}
