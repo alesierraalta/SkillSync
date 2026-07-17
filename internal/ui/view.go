@@ -44,6 +44,8 @@ func (m Model) View() string {
 		content = m.viewSkillFiles()
 	case ScreenSkillMenu:
 		content = m.viewSkillMenu()
+	case ScreenSyncProviders:
+		content = m.viewSyncProviders()
 
 	case ScreenInstaller:
 

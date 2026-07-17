@@ -112,10 +112,10 @@ func TestScreenTransitions(t *testing.T) {
 			expectScreen: ScreenDetail,
 		},
 		{
-			name:         "list to syncing on y",
+			name:         "list to sync-provider selection on y",
 			startScreen:  ScreenList,
 			msg:          tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")},
-			expectScreen: ScreenSyncing,
+			expectScreen: ScreenSyncProviders,
 		},
 		{
 			name:         "detail to list on esc",
@@ -385,9 +385,9 @@ func TestHandleListKeys_Matrix(t *testing.T) {
 			expectScreen: ScreenDetail,
 		},
 		{
-			name:         "y goes to Syncing (ScreenSyncing)",
+			name:         "y opens sync-provider selection",
 			key:          "y",
-			expectScreen: ScreenSyncing,
+			expectScreen: ScreenSyncProviders,
 		},
 		{
 			name:         "s stays on List (triggers save command)",

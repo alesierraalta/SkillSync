@@ -86,6 +86,7 @@ func (f *fakeAppService) SaveToStorage(*types.Skill, storage.StoredMetadata) err
 }
 func (f *fakeAppService) LoadFromStorage(string) (string, error) { return "", nil }
 func (f *fakeAppService) CopyStorageExtras(string, string) error { return nil }
+func (f *fakeAppService) SyncToProviders(string, []string) error { return nil }
 func (f *fakeAppService) InstallCoreSkill(string) error          { return nil }
 func (f *fakeAppService) RegisterOpenCodeTools() error           { return nil }
 func (f *fakeAppService) RegisterSkillManagerAgent() error       { return nil }

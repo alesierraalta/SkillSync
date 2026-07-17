@@ -353,6 +353,8 @@ func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleSkillFilesKeys(msg)
 	case ScreenSkillMenu:
 		return m.handleSkillMenuKeys(msg)
+	case ScreenSyncProviders:
+		return m.handleSyncProvidersKeys(msg)
 	case ScreenInstaller:
 		return m.handleInstallerKeys(msg)
 	case ScreenStorage:
@@ -687,11 +689,7 @@ func (m Model) handleListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 	case "y":
-		m.PrevScreen = m.Screen
-		m.Screen = ScreenSyncing
-		m.SyncFailed = false
-		m.SyncFinished = false
-		return m, m.startSync()
+		return m.openSyncProviders()
 	case "s":
 		return m, m.saveToStorageCmd()
 	case "d":

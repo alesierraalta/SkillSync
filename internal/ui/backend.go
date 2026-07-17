@@ -12,6 +12,7 @@ import (
 	"skillsync/tui/internal/coreskills"
 	"skillsync/tui/internal/discovery"
 	"skillsync/tui/internal/opencode"
+	"skillsync/tui/internal/providersync"
 	"skillsync/tui/internal/parser"
 	"skillsync/tui/internal/remove"
 	"skillsync/tui/internal/runner"
@@ -41,6 +42,7 @@ type AppService interface {
 
 	InstallCoreSkill(name string) error
 	RegisterOpenCodeTools() error
+	SyncToProviders(root string, providerDirs []string) error
 	RegisterSkillManagerAgent() error
 	EnsureAgentsMD(root string) error
 
@@ -282,6 +284,26 @@ func (b *Backend) activeProviders() []string {
 
 func (b *Backend) ensureLF(data []byte) []byte {
 	return bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+}
+
+// SyncToProviders mirrors .agents/skills into each selected provider. OpenCode
+// gets the full tools/agents/commands regeneration; every other provider gets
+// a plain skill-tree mirror. Errors on individual providers are aggregated so a
+// single failing provider does not abort the rest.
+func (b *Backend) SyncToProviders(root string, providerDirs []string) error {
+	var firstErr error
+	for _, dir := range providerDirs {
+		if dir == ".opencode" {
+			if err := b.RegisterOpenCodeTools(); err != nil && firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		if _, err := providersync.Mirror(root, dir); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 func (b *Backend) RegisterOpenCodeTools() error {
