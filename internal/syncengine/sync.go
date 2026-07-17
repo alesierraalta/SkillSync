@@ -311,6 +311,12 @@ func cleanupLegacyHarnessArtifacts(root string, dryRun bool) ([]runner.FileChang
 		if !entry.IsDir() {
 			continue
 		}
+		// skill-sync legitimately owns these filenames as embedded,
+		// git-tracked assets (its SKILL.md depends on assets/sync.sh). They
+		// are not legacy harness copies, so never prune them here.
+		if entry.Name() == "skill-sync" {
+			continue
+		}
 		assetsDir := filepath.Join(skillsDir, entry.Name(), "assets")
 		for _, legacyName := range legacyFiles {
 			path := filepath.Join(assetsDir, legacyName)
